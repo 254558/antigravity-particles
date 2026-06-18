@@ -224,7 +224,9 @@ const renderVertShader = `
     // edge particles grow larger — smooth ramp from center to rim
     float edgeSize = pow(clamp(length(pos.xy) / 0.5, 0.0, 1.0), 1.5);
 
-    gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio) + (edgeSize * 12.0 * uPixelRatio);
+    float ptSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio) + (edgeSize * 12.0 * uPixelRatio);
+    // minimum pixels so round ends can render — tiny sprites turn into square pixels
+    gl_PointSize = max(ptSize, 3.0 * uPixelRatio);
   }
 `
 
@@ -282,7 +284,9 @@ const renderFragShader = `
     halfLen = min(halfLen, 0.48);
     // capsule along x-axis before rotation: from (-halfLen+capR,0) to (halfLen-capR,0)
     float rounded = sdCapsule(uv, vec2(-halfLen + capR, 0.0), vec2(halfLen - capR, 0.0), capR);
-    rounded = smoothstep(.1, 0., rounded);
+    // adaptive soft edge: scales with capsule size so small dots stay crisp & round
+    float aa = max(halfLen * 0.08, 0.02);
+    rounded = smoothstep(aa, 0., rounded);
 
     float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
     if (a < 0.01) discard;
