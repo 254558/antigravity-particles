@@ -8,7 +8,7 @@
         <div class="morphing-card">
           <MorphCard
             imageUrl="/braces.png"
-            color1="#050a14"
+            color1="#318bf7"
             color2="#318bf7"
             :scale="1.5"
             :yOffset="0.1"
@@ -19,7 +19,7 @@
         <div class="morphing-card">
           <MorphCard
             imageUrl="/cube.png"
-            color1="#050a14"
+            color1="#318bf7"
             color2="#318bf7"
             :scale="1.5"
             :yOffset="0"

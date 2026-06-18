@@ -134,7 +134,7 @@ const rdrVert = `
 	    pos.y+=ny*.005*d; pos.x+=nx*.005*d; pos.y+=ny2*.02; pos.x+=nx2*.02;
 	    vVelocity=pos.w; vScale=pos.z;
 	    vec4 vs=modelViewMatrix*vec4(vec3(pos.xy,0.),1.); gl_Position=projectionMatrix*vs;
-	    gl_PointSize=((vScale*7.+0.0001)*uPixelRatio*.3);
+		    gl_PointSize=((vScale*7.+0.0001)*uPixelRatio*.6);
   }
 `
 
