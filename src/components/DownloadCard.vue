@@ -128,14 +128,16 @@ const simFragShader = `
     float velocity = pFrame.w;
     vec2 refPos = texture2D(uPosRefs, uv).xy;
     float time = uTime * 0.5;
-    // breath: edge-weighted — only the rim contracts/expands, center stays still
+    // breath: one continuous bell — center drifts slightly, rim moves a lot,
+    // smooth gradient (no dead zone) so it reads as a single contracting surface
     float distFromCenter = length(refPos);
-    float edgeWeight = smoothstep(0.15, 0.5, distFromCenter);
+    float edgeWeight = pow(clamp(distFromCenter / 0.5, 0.0, 1.0), 1.5);
     float ang = atan(refPos.y, refPos.x);
     // irregular wavy rim, not a perfect circle
     float wave = sin(ang * 5.0 + uTime * 1.2) * 0.5 + sin(ang * 8.0 - uTime * 0.7) * 0.3;
-    // uBreath: 0 = contract (rim pulled inward), 1 = expand (rim spreads out)
-    float breathOffset = (uBreath - 0.5) * 0.7 + wave * 0.12;
+    // uBreath: 0 = contract (gather inward), 1 = expand (spread out)
+    float contract = (1.0 - uBreath);
+    float breathOffset = -contract * 0.45 + uBreath * 0.25 + wave * 0.10;
     vec2 curentPos = refPos * (1.0 + breathOffset * edgeWeight);
     vec2 pos = pFrame.xy;
     pos *= 0.8;
@@ -172,6 +174,7 @@ const simFragShader = `
 
     pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement;
 
+    // scale: single source (ring intensity) — no separate boost, keeps one bell
     float scaleDiff = t - scale;
     scaleDiff *= 0.2;
     scale += scaleDiff;
