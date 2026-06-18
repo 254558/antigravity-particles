@@ -115,7 +115,7 @@ const simFrag = `
 	    vec2 tg=mix(rp,np,uIsHovering);
 	    vec2 dPos=tg-p;
 	    float d=length(dPos);
-	    if(d>.001&&d<.8) p+=normalize(dPos)*min(d*.1, .035);
+	    if(d>.001&&d<.2) p+=normalize(dPos)*min(d*.4, .1);
 	    // 注: 无生命周期重置 — 粒子随 tg 自然流动即可
 	    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
 	    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);

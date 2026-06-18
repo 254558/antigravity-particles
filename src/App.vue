@@ -10,7 +10,7 @@
             imageUrl="/braces.png"
             color1="#000000"
             color2="#318bf7"
-            :scale="1.3"
+            :scale="1.6"
             :yOffset="0.1"
           />
         </div>
@@ -21,7 +21,7 @@
             imageUrl="/cube.png"
             color1="#000000"
             color2="#318bf7"
-            :scale="1.1"
+            :scale="1.4"
             :yOffset="0"
           />
         </div>
