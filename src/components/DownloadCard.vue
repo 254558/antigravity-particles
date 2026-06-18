@@ -278,6 +278,8 @@ const renderFragShader = `
     float capR = 0.13; // thickness (half of capsule width)
     // clamp: never let halfLen < capR → endpoints never cross, min shape is a clean dot
     halfLen = max(halfLen, capR);
+    // clamp: keep within point sprite (uv ∈ [-0.5,0.5]) → no clipping → no parallelogram
+    halfLen = min(halfLen, 0.48);
     // capsule along x-axis before rotation: from (-halfLen+capR,0) to (halfLen-capR,0)
     float rounded = sdCapsule(uv, vec2(-halfLen + capR, 0.0), vec2(halfLen - capR, 0.0), capR);
     rounded = smoothstep(.1, 0., rounded);
