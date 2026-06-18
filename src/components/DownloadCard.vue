@@ -18,13 +18,13 @@ import { noiseGLSL } from '../composables/useNoiseGLSL.js'
 
 const SIZE = 256
 const CONFIG = {
-  density: 220,
-  cameraZoom: 6.0,
+  density: 100,
+  cameraZoom: 7.5,
   ringWidth: 0.15,
   ringWidth2: 0.05,
   ringDisplacement: 0.23,
   particlesScale: 0.65,
-  colors: ['#7aaeff', '#7aaeff', '#7aaeff'],
+  colors: ['#a0c4ff', '#a0c4ff', '#a0c4ff'],
 }
 const PI = Math.PI
 
@@ -131,7 +131,7 @@ function createRT() {
 	    float velocity = pFrame.w;
 	    vec2 refPos = texture2D(uPosRefs, uv).xy;
 	    float time = uTime * 0.5;
-	    vec2 curentPos = refPos;
+		vec2 curentPos = refPos;
 	    vec2 pos = pFrame.xy;
 	    pos *= 0.8;
 
@@ -146,11 +146,11 @@ function createRT() {
 	    t = pow(t, 2.);
 	    t2 = pow(t2, 3.);
 	    t += t2 * 3.;
-	    // far from ring → fade down, but keep a faint sparse glow toward center
-	    float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
-	    // center region: visible sparse dots, brighter when contracting (gathered)
-	    float centerGlow = 0.35 * (1.0 - smoothstep(0.0, uRingRadius * 0.8, dist));
-	    t = t * farFade + centerGlow;
+		    // far from ring → fade down, but keep a faint sparse glow toward center
+		    float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
+			    // center region: visible dots, no fade, same brightness across center
+			    float centerGlow = 0.8 * (1.0 - smoothstep(0.0, uRingRadius * 1.5, dist));
+			    t = t * farFade + centerGlow;
 	    t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
 
 	    float noise1 = snoise(vec3(curentPos.xy * 4. + vec2(88.494, 32.4397), time * 0.35));
