@@ -77,21 +77,6 @@ function sampleEdgePixels(imgData) {
   return edge
 }
 
-// 2) 均匀抖动散点: 网格+随机偏移，避免聚集
-function randomScatter(count) {
-  const pts = []
-  const cols = Math.ceil(Math.sqrt(count * 500 / 500))
-  const rows = Math.ceil(count / cols)
-  const cw = 500 / cols, ch = 500 / rows
-  for (let i = 0; i < count; i++) {
-    const ix = i % cols, iy = Math.floor(i / cols)
-    const x = (ix + 0.5) * cw + (Math.random() - 0.5) * cw * 0.8
-    const y = (iy + 0.5) * ch + (Math.random() - 0.5) * ch * 0.8
-    pts.push([Math.max(0, Math.min(500, x)), Math.max(0, Math.min(500, y))])
-  }
-  return pts
-}
-
 function createRT() {
   return new THREE.WebGLRenderTarget(SIZE, SIZE, {
     minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
@@ -161,7 +146,7 @@ const rdrFrag = `
 	  uniform float uAlpha;
 	  void main(){
     vec2 uv=gl_PointCoord.xy-.5; uv.y*=-1.;
-    float h=.8, pr=vVelocity;
+	    float pr=vVelocity;
 	    vec3 col=mix(uColor1,uColor2,pr);
 	    float disc=smoothstep(.5,.2,length(uv)), a=uAlpha*disc;
     if(a<.01)discard; col=clamp(col,0.,1.);
@@ -190,14 +175,11 @@ onMounted(async () => {
   const scl = props.scale
   const yOff = props.yOffset
 
-	  // 2. 边缘检测: 提取 1px 轮廓像素
-	  const edgePts = sampleEdgePixels(imgData)
-	  // 背景散点: 不加散点，让边缘粒子 hover 时全部聚集到轮廓上
-	  const scatterCount = 0
-	  const scatterPts = []
+		  // 2. 边缘检测: 提取 1px 轮廓像素
+		  const edgePts = sampleEdgePixels(imgData)
 
-  // 合并: 先放边缘粒子（轮廓），再放散点（背景）
-  const totalPts = edgePts.concat(scatterPts)
+	  // 合并
+	  const totalPts = edgePts
   const count = Math.min(totalPts.length, SIZE * SIZE)
 
   // 3. 生成位置数据
