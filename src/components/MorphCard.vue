@@ -119,7 +119,7 @@ const simFrag = `
 	    // 循环流动: 粒子到达目标后重置到随机位置，周围新粒子源源不断被吸附
 		    float arrival=1.-smoothstep(.001,.03,d);
 		    float resetPhase=fract(sd*17.3+uTime*.3);
-		    if(uIsHovering>.01 && arrival>.5 && resetPhase<.01) { p=rp; pf.xy=rp; s=0.005; v=0.; }
+		    if(uIsHovering>.01 && arrival<.5 && resetPhase<.03) { vec2 dir=normalize(rp); p=rp+dir*.3; pf.xy=rp+dir*.3; s=0.005; v=0.; }
 	    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
 	    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
 	    ts+=smoothstep(.05,0.,d)*.5*uIsHovering;
