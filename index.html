@@ -287,24 +287,13 @@
         disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
         disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
 
-        // 所有粒子严格朝鼠标方向汇集（用实际位置 pFrame.xy 而非 restPos）
-        vec2 actualPos = pFrame.xy;
-        vec2 toRing = uRingPos - actualPos;
-        float distToRing = length(toRing);
-        float strength = clamp(0.06 / (distToRing * 0.3 + 0.7), 0.003, 0.09);
-        pos += normalize(toRing) * strength;
+        pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement;
 
         float scaleDiff = t - scale;
         scaleDiff *= 0.2;
         scale += scaleDiff;
 
         vec2 finalPos = curentPos + disp + (pos * 0.25);
-        // 限制位移幅度：不让粒子飘离 rest position 太远
-        vec2 dirFromRest = finalPos - refPos;
-        float maxDist = 0.35;
-        if (length(dirFromRest) > maxDist) {
-          finalPos = refPos + normalize(dirFromRest) * maxDist;
-        }
 
         velocity *= 0.5;
         velocity += scale * 0.25;
@@ -324,7 +313,7 @@
       uniform float uTime, uParticleScale, uPixelRatio;
       uniform int uColorScheme;
       varying vec4 vSeeds;
-      varying float vVelocity, vScale, vRingDist;
+      varying float vVelocity, vScale;
       varying vec2 vLocalPos, vScreenPos;
       void main() {
         vec4 pos = texture2D(uPosition, uv);
@@ -332,74 +321,61 @@
         vVelocity = pos.w;
         vScale = pos.z;
         vLocalPos = pos.xy;
-        // 距离环心越近，粒子越小（中心挤压效果）
-        float distToRing = distance(pos.xy, uRingPos);
-        vRingDist = distToRing;
-        float sizeFactor = distToRing * 3.0 + 0.2;
-        sizeFactor = clamp(sizeFactor, 0.15, 1.0);
         vec4 viewSpace = modelViewMatrix * vec4(vec3(pos.xy, 0.), 1.0);
         gl_Position = projectionMatrix * viewSpace;
         vScreenPos = gl_Position.xy;
-        gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) * sizeFactor;
+        gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale);
       }
     `;
 
-    const renderFragShader = `
-      precision highp float;
-      varying vec4 vSeeds;
-      varying vec2 vScreenPos, vLocalPos;
-      varying float vScale, vVelocity, vRingDist;
-      uniform vec3 uColor1, uColor2, uColor3;
-      uniform vec2 uRingPos, uRez;
-      uniform float uAlpha, uTime, uCapsuleLen, uCapsuleWid;
-      uniform int uColorScheme;
-      ${noiseGLSL}
-      #define PI 3.14159265359
+	    const renderFragShader = `
+	      precision highp float;
+	      varying vec4 vSeeds;
+	      varying vec2 vScreenPos, vLocalPos;
+	      varying float vScale, vVelocity;
+	      uniform vec3 uColor1, uColor2, uColor3;
+	      uniform vec2 uRingPos, uRez;
+	      uniform float uAlpha, uTime;
+	      uniform int uColorScheme;
+	      ${noiseGLSL}
+	      #define PI 3.14159265359
 
-      float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-        r.xy = (p.x > 0.0) ? r.xy : r.zw;
-        r.x = (p.y > 0.0) ? r.x : r.y;
-        vec2 q = abs(p) - b + r.x;
-        return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
-      }
-      vec2 rotate(vec2 v, float a) {
-        float s = sin(a), c = cos(a);
-        return mat2(c, s, -s, c) * v;
-      }
+	      float sdRoundBox(vec2 p, vec2 b, vec4 r) {
+	        r.xy = (p.x > 0.0) ? r.xy : r.zw;
+	        r.x = (p.y > 0.0) ? r.x : r.y;
+	        vec2 q = abs(p) - b + r.x;
+	        return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
+	      }
+	      vec2 rotate(vec2 v, float a) {
+	        float s = sin(a), c = cos(a);
+	        return mat2(c, s, -s, c) * v;
+	      }
 
-      void main() {
-        // 噪声驱动颜色（官网同款）
-        float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * 0.5));
-        noiseColor = (noiseColor + 1.) * 0.5;
+	      void main() {
+	        // 噪声驱动颜色（官网同款）
+	        float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * 0.5));
+	        noiseColor = (noiseColor + 1.) * 0.5;
 
-        // 胶囊端点严格指向 uRingPos（鼠标位置）
-        // 注意：mesh.scale.y=-5，uRingPos.y 已在 JS 层取反，此处直接计算
-        float angle = atan(vLocalPos.y - uRingPos.y, vLocalPos.x - uRingPos.x);
-        vec2 uv = gl_PointCoord.xy - 0.5;
-        uv = rotate(uv, -angle);
+	        // 胶囊端点指向 uRingPos（鼠标位置）
+	        float noiseAngle = snoise(vec3(vLocalPos * 10. + vec2(18.4924, 72.9744), uTime * .85));
+	        float angle = atan(vLocalPos.y - uRingPos.y, vLocalPos.x - uRingPos.x);
+	        vec2 uv = gl_PointCoord.xy - 0.5;
+	        uv.y *= -1.;
+	        uv = rotate(uv, -angle + (noiseAngle * .5));
 
-        // 颜色三段渐变（官网同款）
-        float h = 0.8;
-        float progress = smoothstep(0., .75, pow(noiseColor, 2.));
-        vec3 col = mix(mix(uColor1, uColor2, progress/h),
-                       mix(uColor2, uColor3, (progress - h) / (1.0 - h)),
-                       step(h, progress));
+	        // 颜色三段渐变（官网同款）
+	        float h = 0.8;
+	        float progress = smoothstep(0., .75, pow(noiseColor, 2.));
+	        vec3 col = mix(mix(uColor1, uColor2, progress/h),
+	                       mix(uColor2, uColor3, (progress - h) / (1.0 - h)),
+	                       step(h, progress));
 
-        // 胶囊形：一端在原点（粒子位置），另一端指向鼠标方向
-        // 离环心越近，胶囊越短越小
-        float distFactor = vRingDist * 2.0 + 0.15;
-        distFactor = clamp(distFactor, 0.2, 1.0);
-        float capLen = uCapsuleLen * distFactor;
-        float capWid = uCapsuleWid * distFactor;
-        // 胶囊形：用 sdRoundBox 绘制圆角胶囊，旋转后 x+ 指向鼠标方向
-        // 胶囊居中在 uv 原点，左右对称，两端都是圆头
-        // 原本的 gl_PointSize 已经让点随距离衰减，旋转后胶囊指向鼠标方向
-        float lenHalf = capLen * 0.5;
-        float rounded = sdRoundBox(uv, vec2(lenHalf, capWid), vec4(capWid));
-        rounded = smoothstep(0.1, 0.0, rounded);
+	        // 圆角矩形胶囊（官网同款：sdRoundBox 0.5, 0.2, 0.25）
+	        float rounded = sdRoundBox(uv, vec2(0.5, 0.2), vec4(.25));
+	        rounded = smoothstep(.1, 0., rounded);
 
-        float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
-        if (a < 0.01) discard;
+	        float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
+	        if (a < 0.01) discard;
 
         col = clamp(col, 0., 1.);
         col = mix(col, col * clamp(vVelocity, 0., 1.), float(uColorScheme));
@@ -475,8 +451,6 @@
           uParticleScale: { value: 1 },
           uPixelRatio: { value: renderer.getPixelRatio() },
           uColorScheme: { value: 0 },
-          uCapsuleLen: { value: 1.0 },
-          uCapsuleWid: { value: 0.2 },
         },
         vertexShader: renderVertShader,
         fragmentShader: renderFragShader,
