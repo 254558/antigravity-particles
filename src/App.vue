@@ -21,7 +21,7 @@
             imageUrl="/cube.png"
             color1="#000000"
             color2="#318bf7"
-            :scale="1.4"
+            :scale="1.6"
             :yOffset="0"
           />
         </div>
