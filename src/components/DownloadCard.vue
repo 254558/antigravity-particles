@@ -493,10 +493,11 @@ function animate() {
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
-  // mouse velocity → smooth boost that rises slowly and decays gradually
-  const rawVel = smoothRingPos.distanceTo(targetPos) * 8
-  smoothVelBoost += (rawVel - smoothVelBoost) * 0.02
-  const ringDispVal = CONFIG.ringDisplacement + pw * 0.06 + smoothVelBoost
+  // mouse velocity → smooth boost capped to prevent wild deformation
+	  const rawVel = smoothRingPos.distanceTo(targetPos) * 8
+	  smoothVelBoost += (rawVel - smoothVelBoost) * 0.02
+	  const cappedBoost = Math.min(smoothVelBoost, 0.03)
+	  const ringDispVal = CONFIG.ringDisplacement + pw * 0.06 + cappedBoost
   const particleScale = renderer.domElement.width / renderer.getPixelRatio() / 2000 * CONFIG.particlesScale
 
   simMaterial.uniforms.uPosition.value = everRendered ? rt1.texture : posTex
