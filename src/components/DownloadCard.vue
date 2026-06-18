@@ -36,9 +36,11 @@ let hoverProgress = 0, pushProgress = 0, lastHoverState = false
 let count, pointsData
 let posTex, rt1, rt2, everRendered = false
 let mesh, simMaterial, renderMaterial, simScene, simCamera
-let animId = null
-let smoothRingPos = new THREE.Vector2(0, 0)
-
+	let animId = null
+	let smoothRingPos = new THREE.Vector2(0, 0)
+	let smoothVelBoost = 0 // smoothed mouse velocity boost
+	
+	
 function linearMap(x, a, b, c, d) {
   return ((x - a) * (d - c)) / (b - a) + c
 }
@@ -449,7 +451,10 @@ function animate() {
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
-  const ringDispVal = CONFIG.ringDisplacement + pw * 0.06
+  // mouse velocity → smooth boost that rises slowly and decays gradually
+  const rawVel = smoothRingPos.distanceTo(targetPos) * 8
+  smoothVelBoost += (rawVel - smoothVelBoost) * 0.02
+  const ringDispVal = CONFIG.ringDisplacement + pw * 0.06 + smoothVelBoost
   const particleScale = renderer.domElement.width / renderer.getPixelRatio() / 2000 * CONFIG.particlesScale
 
   simMaterial.uniforms.uPosition.value = everRendered ? rt1.texture : posTex
