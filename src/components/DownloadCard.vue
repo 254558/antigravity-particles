@@ -165,7 +165,9 @@ function createRT() {
 	    disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
 
 	    // breath modulates displacement amplitude: high breath = wider expansion/contraction
-	    float breathDisp = 0.6 + uBreath * 0.8;
+	    // edge-weighted: rim particles curl inward more for visible pleated bell edge
+	    float edgeWeight = smoothstep(uRingRadius * 0.4, uRingRadius * 1.2, dist);
+	    float breathDisp = (0.6 + uBreath * 0.8) * (1.0 + edgeWeight * 0.8);
 	    pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement * breathDisp;
 
 	    // scale: single source (ring intensity) — no separate boost, keeps one bell
@@ -487,7 +489,7 @@ function animate() {
   // mood modulates: frequency (faster when energetic), amplitude (stronger), offset
   const breathFreq = 0.9 + mood * 0.3
   const breathAmp = 0.35 + mood * 0.5
-  const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq)
+  const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq * 0.5)
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
