@@ -58,10 +58,11 @@ body {
 
 /* ── 图标波浪 ── */
 .agent-first-section {
-  position: relative; margin: 20px auto 0;
-  width: 100%; max-width: 1440px;
+  position: relative; margin: 0 auto 0;
+  width: 100vw;
   overflow-x: clip;
-  padding: 40px 0;
+  padding: 50px 0;
+  background: #000;
 }
 .icon-list {
   display: flex; flex-wrap: nowrap; gap: 8px;
@@ -70,8 +71,8 @@ body {
 }
 .icon-list li { padding: 0; list-style: none; }
 .bouncer {
-  background: rgba(200,200,200,0.15);
-  border: 1px solid rgba(128,128,128,0.4);
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.3);
   will-change: transform;
   backface-visibility: hidden;
   display: flex; align-items: center; justify-content: center;
@@ -83,7 +84,7 @@ body {
   width: 98px;
   font-weight: 300;
   font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'ROND' 50, 'opsz' 48;
-  color: #000;
+  color: #fff;
   user-select: none;
 }
 .bouncer:nth-child(2) { z-index: 2; }
