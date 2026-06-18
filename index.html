@@ -287,7 +287,12 @@
         disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
         disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
 
-        pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement;
+        // 所有粒子严格朝鼠标方向汇集（用实际位置 pFrame.xy 而非 restPos）
+        vec2 actualPos = pFrame.xy;
+        vec2 toRing = uRingPos - actualPos;
+        float distToRing = length(toRing);
+        float strength = clamp(0.06 / (distToRing * 0.3 + 0.7), 0.003, 0.09);
+        pos += normalize(toRing) * strength;
 
         float scaleDiff = t - scale;
         scaleDiff *= 0.2;
@@ -367,14 +372,11 @@
         float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * 0.5));
         noiseColor = (noiseColor + 1.) * 0.5;
 
-        // 胶囊端点指向 uRingPos（鼠标位置）
-        // 计算从粒子到鼠标的方向角
+        // 胶囊端点严格指向 uRingPos（鼠标位置）
+        // 注意：mesh.scale.y=-5，uRingPos.y 已在 JS 层取反，此处直接计算
         float angle = atan(vLocalPos.y - uRingPos.y, vLocalPos.x - uRingPos.x);
-        float noiseAngle = snoise(vec3(vLocalPos * 10. + vec2(18.4924, 72.9744), uTime * 0.85));
-        float finalAngle = -angle + (noiseAngle * 0.5);
         vec2 uv = gl_PointCoord.xy - 0.5;
-        uv.y *= -1.0;
-        uv = rotate(uv, finalAngle);
+        uv = rotate(uv, -angle);
 
         // 颜色三段渐变（官网同款）
         float h = 0.8;
