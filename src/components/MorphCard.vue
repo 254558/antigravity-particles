@@ -105,12 +105,13 @@ const simFrag = `
 				    float arrival=1.-smoothstep(.001,.03,d);
 				    float resetPhase=fract(sd*17.3+uTime*.3);
 					    if(uIsHovering>.01 && arrival<.5 && resetPhase<.03) { vec2 dir=vec2(hash(uv+0.5)); p=rp+dir*.6; pf.xy=rp+dir*.6; s=0.005; v=0.; }
-		    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
-		    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
-		    ts+=smoothstep(.05,0.,d)*.8*uIsHovering;
-		    s+=(ts-s)*.15;
-	    // velocity: hover 时靠近目标的粒子变亮
-	    v=smoothstep(.3,.001,d)*uIsHovering;
+			    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
+			    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
+			    ts+=smoothstep(.05,0.,d)*.8*uIsHovering;
+			    s+=(ts-s)*.15;
+		    // velocity: hover 时靠近目标的粒子变亮，轮廓更清晰
+		    v=smoothstep(.5,.001,d)*uIsHovering;
+		    // glow boost: 极近距离的粒子额外放大增亮，强化轮廓边缘
     gl_FragColor=vec4(pf.xy+(p-pf.xy)*.2,s,v);
   }
 `

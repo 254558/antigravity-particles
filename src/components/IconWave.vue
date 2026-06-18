@@ -12,11 +12,12 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 const icons = [
-'data_object','code_blocks','dashboard_customize','commit','folder','merge', 'developer_mode_tv','keyboard_tab','code','terminal','keyboard_return','file_copy','device_hub','data_object','code_blocks','dashboard_customize'
+'data_object','code_blocks','dashboard_customize','commit','folder','merge', 'developer_mode_tv','keyboard_tab','code','terminal','keyboard_return','file_copy','device_hub','data_object','code_blocks','dashboard_customize','data_object','code_blocks','dashboard_customize','commit','folder','merge', 'developer_mode_tv','keyboard_tab','code','terminal','keyboard_return','file_copy','device_hub','data_object','code_blocks','dashboard_customize'
 ]
 
 const AMPLITUDE = 35
 const WAVELENGTH = 1484
+	const SCROLL_SPEED = 0.1
 
 const listRef = ref(null)
 const bouncers = ref([])
@@ -28,6 +29,9 @@ function frame() {
   phase = (phase + step) % WAVELENGTH
   const listRect = listRef.value?.getBoundingClientRect()
   if (!listRect) { animId = requestAnimationFrame(frame); return }
+
+  // 往下滑动时图标整体左移
+  const scrollOffset = window.scrollY * SCROLL_SPEED
 
   // 先计算所有图标的缩放值
   const scales = []
@@ -53,7 +57,7 @@ function frame() {
     const gapL = i > 0 ? (1 - scales[i - 1]) * 25 : 0
     const gapR = i < scales.length - 1 ? (1 - scales[i + 1]) * 25 : 0
     const tx = (gapL - gapR) * 0.5
-    el.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(2)}px) scale(${sc.toFixed(3)})`
+    el.style.transform = `translate(${(tx - scrollOffset).toFixed(1)}px, ${ty.toFixed(2)}px) scale(${sc.toFixed(3)})`
   }
   animId = requestAnimationFrame(frame)
 }
