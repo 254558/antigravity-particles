@@ -7,20 +7,22 @@
       <div class="try-card-wrap">
         <div class="morphing-card">
           <MorphCard
-            imageUrl="/individual.png"
-            color1="#318bf7"
-            color2="#bada4c"
-            color3="#e35058"
+            imageUrl="/braces.png"
+            color1="#000000"
+            color2="#318bf7"
             :scale="1.3"
             :yOffset="0.1"
           />
+        </div>
+      </div>
+      <div class="try-card-wrap">
+        <div class="morphing-card">
           <MorphCard
             imageUrl="/cube.png"
-            color1="#aecbfa"
-            color2="#aecbfa"
-            color3="#93bbfc"
-            :scale="1.2"
-            :yOffset="0.05"
+            color1="#000000"
+            color2="#318bf7"
+            :scale="1.1"
+            :yOffset="0"
           />
         </div>
       </div>

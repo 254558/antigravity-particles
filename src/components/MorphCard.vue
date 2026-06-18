@@ -11,8 +11,7 @@ import { noiseGLSL } from '../composables/useNoiseGLSL.js'
 const props = defineProps({
   imageUrl: { type: String, required: true },
   color1: { type: String, default: '#318bf7' },
-  color2: { type: String, default: '#bada4c' },
-  color3: { type: String, default: '#e35058' },
+  color2: { type: String, default: '#8892ff' },
   scale: { type: Number, default: 1.3 },
   yOffset: { type: Number, default: 0.1 },
 })
@@ -78,11 +77,17 @@ function sampleEdgePixels(imgData) {
   return edge
 }
 
-// 2) 随机散点（全画幅均匀分布）
+// 2) 均匀抖动散点: 网格+随机偏移，避免聚集
 function randomScatter(count) {
   const pts = []
+  const cols = Math.ceil(Math.sqrt(count * 500 / 500))
+  const rows = Math.ceil(count / cols)
+  const cw = 500 / cols, ch = 500 / rows
   for (let i = 0; i < count; i++) {
-    pts.push([Math.random() * 500, Math.random() * 500])
+    const ix = i % cols, iy = Math.floor(i / cols)
+    const x = (ix + 0.5) * cw + (Math.random() - 0.5) * cw * 0.8
+    const y = (iy + 0.5) * ch + (Math.random() - 0.5) * ch * 0.8
+    pts.push([Math.max(0, Math.min(500, x)), Math.max(0, Math.min(500, y))])
   }
   return pts
 }
@@ -105,22 +110,19 @@ const simFrag = `
     vec4 pf=texture2D(uPosition,uv); float s=pf.z, v=pf.w;
     vec2 rp=texture2D(uPosRefs,uv).xy, np=texture2D(uPosNearest,uv).xy;
     float sd=hash(uv).x, sd2=hash(uv).y, t=uTime*.5, le=3.+sin(sd2*100.)*1., lt=mod(sd*100.+t,le);
-    vec2 p=pf.xy;
-    // 判断是否为散点粒子（目标 === 基准 → 不动点）
-    float isEdge=step(.005,length(np-rp));
-    // 目标: hover 时从散乱基准插值到形状位置；散点粒子始终留在原位
-    vec2 tg=mix(rp,np,uIsHovering*uIsHovering*isEdge);
-    vec2 dr=normalize(tg-p)*.02;
-    float d=length(tg-p), ds=smoothstep(.3,0.,d);
-    if(d>.005) p+=dr*ds;
-    // 生命周期重置: 仅边缘粒子非 hover 时重置到散乱态
-    if(lt<.01 && uIsHovering<.5 && isEdge>.5){ p=rp; pf.xy=rp; s=0.; }
-    // scale: 生命周期脉动 + 已接近目标的边缘粒子 hover 时增大
-    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
-    ts+=smoothstep(.05,0.,d)*2.*uIsHovering*isEdge;
-    s+=(ts-s)*.1;
-    // velocity: 仅边缘粒子 hover 时靠近目标变亮
-    v=smoothstep(.3,.001,d)*uIsHovering*isEdge;
+	    vec2 p=pf.xy;
+	    // 所有粒子都是可吸附的，hover 时向边缘目标移动
+	    vec2 tg=np;
+	    vec2 dPos=tg-p;
+	    float d=length(dPos);
+	    if(d>.001&&uIsHovering>.01) p+=normalize(dPos)*min(d*.08, .02)*uIsHovering;
+	    // 注: 无生命周期重置 — 粒子随 tg 自然流动即可
+	    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
+	    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
+	    ts+=smoothstep(.05,0.,d)*.8*uIsHovering;
+	    s+=(ts-s)*.15;
+	    // velocity: hover 时靠近目标的粒子变亮
+	    v=smoothstep(.3,.001,d)*uIsHovering;
     gl_FragColor=vec4(pf.xy+(p-pf.xy)*.2,s,v);
   }
 `
@@ -130,39 +132,36 @@ const rdrVert = `
   precision highp float;
   attribute vec4 seeds;
   uniform sampler2D uPosition;
-  uniform float uTime, uParticleScale, uPixelRatio, uIsHovering, uPulseProgress;
-  uniform int uColorScheme;
-  varying vec4 vSeeds; varying float vVelocity, vScale; varying vec2 vLocalPos, vScreenPos;
-  ${noiseGLSL}
-  void main(){
-    vec4 pos=texture2D(uPosition,uv); vSeeds=seeds;
-    float nx=snoise(vec3(pos.xy*10.,uTime*.2+100.)), ny=snoise(vec3(pos.xy*10.,uTime*.2));
-    float nx2=snoise(vec3(pos.xy*.5,uTime*.15+45.)), ny2=snoise(vec3(pos.xy*.5,uTime*.15+87.));
-    float cd=length(pos.xy), pr=uPulseProgress;
-    float tt=smoothstep(pr-.25,pr,cd)-smoothstep(pr,pr+.25,cd); tt*=smoothstep(1.,.0,cd);
-    pos.xy*=1.+(tt*.02);
-    float d=smoothstep(0.,.9,pos.w); d=mix(0.,d,uIsHovering);
-    pos.y+=ny*.005*d; pos.x+=nx*.005*d; pos.y+=ny2*.02; pos.x+=nx2*.02;
-    vVelocity=pos.w; vScale=pos.z; vLocalPos=pos.xy;
-    vec4 vs=modelViewMatrix*vec4(vec3(pos.xy,0.),1.); gl_Position=projectionMatrix*vs; vScreenPos=gl_Position.xy;
-    float ms=.25+float(uColorScheme)*.75;
-    gl_PointSize=((vScale*7.)*(uPixelRatio*.5)*uParticleScale)+(ms*uPixelRatio);
+	  uniform float uTime, uParticleScale, uPixelRatio, uIsHovering, uPulseProgress;
+	  varying float vVelocity, vScale;
+	  ${noiseGLSL}
+	  void main(){
+	    vec4 pos=texture2D(uPosition,uv);
+	    float nx=snoise(vec3(pos.xy*10.,uTime*.2+100.)), ny=snoise(vec3(pos.xy*10.,uTime*.2));
+	    float nx2=snoise(vec3(pos.xy*.5,uTime*.15+45.)), ny2=snoise(vec3(pos.xy*.5,uTime*.15+87.));
+	    float cd=length(pos.xy), pr=uPulseProgress;
+	    float tt=smoothstep(pr-.25,pr,cd)-smoothstep(pr,pr+.25,cd); tt*=smoothstep(1.,.0,cd);
+	    pos.xy*=1.+(tt*.02);
+	    float d=smoothstep(0.,.9,pos.w); d=mix(0.,d,uIsHovering);
+	    pos.y+=ny*.005*d; pos.x+=nx*.005*d; pos.y+=ny2*.02; pos.x+=nx2*.02;
+	    vVelocity=pos.w; vScale=pos.z;
+	    vec4 vs=modelViewMatrix*vec4(vec3(pos.xy,0.),1.); gl_Position=projectionMatrix*vs;
+	    gl_PointSize=((vScale*7.+0.001)*uPixelRatio*.4);
   }
 `
 
 // RENDER fragment — 官方同款小圆点
 const rdrFrag = `
-  precision highp float;
-  varying vec4 vSeeds; varying vec2 vScreenPos, vLocalPos; varying float vScale, vVelocity;
-  uniform vec3 uColor1,uColor2,uColor3; uniform vec2 uRez; uniform float uAlpha,uTime; uniform int uColorScheme;
-  ${noiseGLSL}
-  void main(){
+	  precision highp float;
+	  varying float vScale, vVelocity;
+	  uniform vec3 uColor1,uColor2;
+	  uniform float uAlpha;
+	  void main(){
     vec2 uv=gl_PointCoord.xy-.5; uv.y*=-1.;
     float h=.8, pr=vVelocity;
-    vec3 col=mix(mix(uColor1,uColor2,pr/h),mix(uColor2,uColor3,(pr-h)/(1.-h)),step(h,pr));
-    float disc=smoothstep(.5,.45,length(uv)), a=uAlpha*disc*smoothstep(.1,.2,vScale);
+	    vec3 col=mix(uColor1,uColor2,pr);
+	    float disc=smoothstep(.5,.2,length(uv)), a=uAlpha*disc*smoothstep(.0,.04,vScale);
     if(a<.01)discard; col=clamp(col,0.,1.);
-    col=mix(col,col*clamp(vVelocity,0.,1.),float(uColorScheme));
     gl_FragColor=vec4(col,clamp(a,0.,1.));
   }
 `
@@ -172,11 +171,12 @@ onMounted(async () => {
   const card = canvasEl.parentElement
   if (!card) return
 
-  const W = card.offsetWidth / 2
+  const W = card.offsetWidth
   const H = card.offsetHeight
   canvasEl.style.position = 'absolute'
   canvasEl.style.top = '0'
-  canvasEl.style.width = '50%'
+  canvasEl.style.left = '0'
+  canvasEl.style.width = '100%'
   canvasEl.style.height = '100%'
   canvasEl.style.display = 'block'
   canvasEl.width = W
@@ -187,11 +187,11 @@ onMounted(async () => {
   const scl = props.scale
   const yOff = props.yOffset
 
-  // 2. 边缘检测: 提取 1px 轮廓像素
-  const edgePts = sampleEdgePixels(imgData)
-  // 背景散点: 均匀随机分布，数量与边缘点数保持一定比例
-  const scatterCount = Math.min(edgePts.length * 2, 3000)
-  const scatterPts = randomScatter(scatterCount)
+	  // 2. 边缘检测: 提取 1px 轮廓像素
+	  const edgePts = sampleEdgePixels(imgData)
+	  // 背景散点: 不加散点，让边缘粒子 hover 时全部聚集到轮廓上
+	  const scatterCount = 0
+	  const scatterPts = []
 
   // 合并: 先放边缘粒子（轮廓），再放散点（背景）
   const totalPts = edgePts.concat(scatterPts)
@@ -229,13 +229,13 @@ onMounted(async () => {
   renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
   renderer.setSize(W, H, false)
-  renderer.setClearColor(0x121212, 1)
+  renderer.setClearColor(0x000000, 0)
 
   const aspect = W / H
   camera = new THREE.OrthographicCamera(-VIEW * aspect, VIEW * aspect, VIEW, -VIEW, 0, 10)
   camera.position.z = 5
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x121212)
+  scene.background = null
   clock = new THREE.Clock()
 
   // 5. GPGPU textures
@@ -291,12 +291,10 @@ onMounted(async () => {
       uPosition: { value: posTex }, uTime: { value: 0 },
       uParticleScale: { value: particleScale },
       uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
-      uRez: { value: new THREE.Vector2(W, H) },
       uAlpha: { value: 1 }, uIsHovering: { value: 0 },
-      uPulseProgress: { value: 0 }, uColorScheme: { value: 0 },
-      uColor1: { value: new THREE.Color(props.color1) },
-      uColor2: { value: new THREE.Color(props.color2) },
-      uColor3: { value: new THREE.Color(props.color3) },
+	      uPulseProgress: { value: 0 },
+	      uColor1: { value: new THREE.Color(props.color1) },
+	      uColor2: { value: new THREE.Color(props.color2) },
     },
     vertexShader: rdrVert, fragmentShader: rdrFrag,
     transparent: true, depthTest: false, depthWrite: false,
@@ -344,7 +342,7 @@ onMounted(async () => {
 
   // 10. Resize
   resizeHandler = () => {
-    const nw = card.offsetWidth / 2, nh = card.offsetHeight
+    const nw = card.offsetWidth, nh = card.offsetHeight
     renderer.setSize(nw, nh, false)
     const na = nw / nh
     camera.left = -VIEW * na
@@ -353,8 +351,7 @@ onMounted(async () => {
     camera.bottom = -VIEW
     camera.updateProjectionMatrix()
     if (rdrMat) {
-      rdrMat.uniforms.uRez.value.set(nw, nh)
-      rdrMat.uniforms.uParticleScale.value = nw / 2000
+	      rdrMat.uniforms.uParticleScale.value = nw / 2000
     }
   }
   window.addEventListener('resize', resizeHandler)
