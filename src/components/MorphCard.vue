@@ -104,7 +104,7 @@ const simFrag = `
 			    // 循环流动: 粒子到达目标后重置到随机位置，周围新粒子源源不断被吸附
 				    float arrival=1.-smoothstep(.001,.03,d);
 				    float resetPhase=fract(sd*17.3+uTime*.3);
-					    if(uIsHovering>.01 && arrival<.5 && resetPhase<.015) { vec2 dir=normalize(rp); p=rp+dir*.08; pf.xy=rp+dir*.08; s=0.005; v=0.; }
+					    if(uIsHovering>.01 && arrival<.5 && resetPhase<.03) { vec2 dir=vec2(hash(uv+0.5)); p=rp+dir*.6; pf.xy=rp+dir*.6; s=0.005; v=0.; }
 		    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
 		    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
 		    ts+=smoothstep(.05,0.,d)*.8*uIsHovering;
@@ -193,12 +193,12 @@ onMounted(async () => {
     ((250 - ey) / 250) * scl + yOff
   ])
 
-  for (let i = 0; i < count; i++) {
-    // 随机初始位置
-    const rx = Math.random() * 500, ry = Math.random() * 500
-    const bx = (rx - 250) / 250, by = (250 - ry) / 250
-    base[i * 2] = bx
-    base[i * 2 + 1] = by
+	  for (let i = 0; i < count; i++) {
+	    // 随机初始位置，水平方向扩展 1.5 倍让粒子跨越卡片边界
+	    const rx = Math.random() * 750 - 125, ry = Math.random() * 500
+	    const bx = (rx - 250) / 250, by = (250 - ry) / 250
+	    base[i * 2] = bx
+	    base[i * 2 + 1] = by
 
     // 找最近的边缘点作为目标
     let bestD = Infinity, bestNx = bx, bestNy = by
