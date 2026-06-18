@@ -1,0 +1,3 @@
+node_modules/
+_reference/node_modules/
+*.log

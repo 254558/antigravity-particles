@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Antigravity · Jellyfish Capsule Particles</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #121212; }
+    #c { position: fixed; inset: 0; }
+    .loading {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: rgba(255,255,255,0.5); font-size: 14px; font-family: system-ui, sans-serif;
+      pointer-events: none;
+    }
+    .hint {
+      position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.25); font-size: 13px; font-family: system-ui, sans-serif;
+      pointer-events: none; letter-spacing: 0.6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="c"></div>
+  <div class="loading" id="loading">生成水母粒子中…</div>
+  <div class="hint">移动鼠标 · 胶囊指向鼠标 · 水母形变</div>
+
+  <script src="https://unpkg.com/gsap@3.12.5/dist/gsap.min.js"></script>
+  <script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.180.0/build/three.module.js" } }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ============================================================
+    // 配置（对齐官网 dark theme）
+    // ============================================================
+    const SIZE = 256;          // GPGPU 纹理 256×256 = 65536 max
+    const CONFIG = {
+      density: 100,
+      cameraZoom: 3.5,
+      ringWidth: 0.15,
+      ringWidth2: 0.05,
+      ringDisplacement: 0.06,
+      colors: ['#318bf7', '#bada4c', '#e35058'],
+    };
+    const PI = Math.PI;
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true, alpha: true, powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setClearColor(0x121212, 1);
+    renderer.autoClear = false;
+    document.getElementById('c').appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 1000);
+    camera.position.z = CONFIG.cameraZoom;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x121212);
+    const clock = new THREE.Clock();
+
+    // Raycast 平面（官网同款：PlaneGeometry 12.5×12.5）
+    const raycastPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(12.5, 12.5),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    scene.add(raycastPlane);
+    const raycaster = new THREE.Raycaster();
+    const mouseNDC = new THREE.Vector2();
+    const intersectionPoint = new THREE.Vector3();
+    let isIntersecting = false, mouseIsOver = false;
+    let hoverProgress = 0, pushProgress = 0;
+    let lastHoverState = false;
+
+    // ============================================================
+    // 生成水母俯视图（黑色背景 + 白色水母轮廓）
+    //   官网用 icon_cube.png 驱动粒子密度，我们用水母图
+    // ============================================================
+    function createJellyfishImageData(size = 500) {
+      const cvs = document.createElement('canvas');
+      cvs.width = size; cvs.height = size;
+      const ctx = cvs.getContext('2d');
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#fff';
+
+      const cx = size / 2, cy = size / 2;
+      const R = size * 0.28;
+
+      // 伞盖（上半圆 + 下沿弧）
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, PI, 0);
+      ctx.lineTo(cx + R * 0.9, cy + R * 0.15);
+      ctx.quadraticCurveTo(cx, cy + R * 0.55, cx - R * 0.9, cy + R * 0.15);
+      ctx.closePath(); ctx.fill();
+
+      // 伞盖内辐管（更细致的线条）
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = size * 0.01;
+      for (let i = 0; i < 16; i++) {
+        const a = PI + (i / 15) * PI;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * R * 0.15, cy + Math.sin(a) * R * 0.15);
+        ctx.lineTo(cx + Math.cos(a) * R * 0.92, cy + Math.sin(a) * R * 0.92);
+        ctx.stroke();
+      }
+
+      // 触手
+      ctx.fillStyle = '#fff';
+      const tentN = 36;
+      for (let i = 0; i < tentN; i++) {
+        const tx = cx - R * 0.85 + (i / (tentN - 1)) * R * 1.7;
+        const tLen = size * (0.08 + Math.random() * 0.15);
+        const tw = size * (0.004 + Math.random() * 0.005);
+        ctx.fillRect(tx - tw, cy + R * 0.15, tw * 2, tLen);
+      }
+      // 口器
+      ctx.fillRect(cx - size * 0.05, cy + R * 0.08, size * 0.10, size * 0.22);
+      return ctx.getImageData(0, 0, size, size);
+    }
+
+    // ============================================================
+    // 泊松盘采样（官网同款算法）
+    // ============================================================
+    function linearMap(x, a, b, c, d) {
+      return ((x - a) * (d - c)) / (b - a) + c;
+    }
+
+    function poissonDiskFixed(shape, minDist, maxDist, tries = 20) {
+      const cellSize = minDist / Math.SQRT2;
+      const gridW = Math.ceil(shape[0] / cellSize);
+      const gridH = Math.ceil(shape[1] / cellSize);
+      const grid = new Int32Array(gridW * gridH).fill(-1);
+      const points = [];
+      const active = [];
+      const rng = Math.random;
+
+      const gIdx = p => Math.floor(p[0] / cellSize) + Math.floor(p[1] / cellSize) * gridW;
+      const far = (p, minD2) => {
+        const gx = Math.floor(p[0] / cellSize), gy = Math.floor(p[1] / cellSize);
+        for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
+          const nx = gx + dx, ny = gy + dy;
+          if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
+          const pi = grid[nx + ny * gridW];
+          if (pi !== -1) {
+            const q = points[pi];
+            const dx2 = p[0] - q[0], dy2 = p[1] - q[1];
+            if (dx2 * dx2 + dy2 * dy2 < minD2) return false;
+          }
+        }
+        return true;
+      };
+
+      const p0 = [rng() * shape[0], rng() * shape[1]];
+      points.push(p0); grid[gIdx(p0)] = 0; active.push(0);
+
+      while (active.length) {
+        const ri = active[Math.floor(rng() * active.length)];
+        let found = false;
+        for (let t = 0; t < tries; t++) {
+          const ang = rng() * PI * 2;
+          const rad = minDist + rng() * (maxDist - minDist);
+          const np = [points[ri][0] + Math.cos(ang) * rad, points[ri][1] + Math.sin(ang) * rad];
+          if (np[0] < 0 || np[0] >= shape[0] || np[1] < 0 || np[1] >= shape[1]) continue;
+          if (far(np, minDist * minDist)) {
+            points.push(np); grid[gIdx(np)] = points.length - 1;
+            active.push(points.length - 1); found = true; break;
+          }
+        }
+        if (!found) active.splice(active.indexOf(ri), 1);
+      }
+      return points;
+    }
+
+    // ============================================================
+    // 粒子工厂（对齐官网 createPoints + createPointsFromImage）
+    // ============================================================
+    let count, pointsData;
+    let posTex, rt1, rt2, everRendered = false;
+    let mesh, simMaterial, renderMaterial, simScene, simCamera;
+
+    function createDataTexture(data) {
+      const arr = new Float32Array(SIZE * SIZE * 4);
+      for (let r = 0; r < count; r++) {
+        arr[r * 4] = data[r * 2] * (1 / 250);
+        arr[r * 4 + 1] = data[r * 2 + 1] * (1 / 250);
+        arr[r * 4 + 2] = 0;
+        arr[r * 4 + 3] = 0;
+      }
+      const tex = new THREE.DataTexture(arr, SIZE, SIZE, THREE.RGBAFormat, THREE.FloatType);
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function createRT() {
+      return new THREE.WebGLRenderTarget(SIZE, SIZE, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat,
+        type: THREE.FloatType,
+        depthBuffer: false,
+        stencilBuffer: false,
+      });
+    }
+
+    // Simplex 3D noise (Ashima Arts)
+    const noiseGLSL = `
+      vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;}
+      vec4 mod289(vec4 x){return x-floor(x*(1./289.))*289.;}
+      vec4 permute(vec4 x){return mod289(((x*34.)+1.)*x);}
+      vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+      float snoise(vec3 v){
+        const vec2 C=vec2(1./6.,1./3.); const vec4 D=vec4(0.,.5,1.,2.);
+        vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+        vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.-g;
+        vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+        vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+2.*C.xxx; vec3 x3=x0-D.yyy;
+        i=mod289(i);
+        vec4 p=permute(permute(permute(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+        float n_=.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+        vec4 j=p-49.*floor(p*ns.z*ns.z);
+        vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.*x_);
+        vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy;
+        vec4 h=1.-abs(x)-abs(y);
+        vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+        vec4 s0=floor(b0)*2.+1.; vec4 s1=floor(b1)*2.+1.; vec4 sh=-step(h,vec4(0.));
+        vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+        vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+        vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+        p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+        vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.); m=m*m;
+        return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+      }
+    `;
+
+    // ============================================================
+    // SIM shader（逐字复刻官网 live shader — ring-based 噪声物理）
+    // ============================================================
+    const simFragShader = `
+      precision highp float;
+      uniform sampler2D uPosition, uPosRefs;
+      uniform vec2 uRingPos;
+      uniform float uTime, uDeltaTime;
+      uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement;
+      ${noiseGLSL}
+      void main() {
+        vec2 uv = gl_FragCoord.xy / 256.0;
+        vec4 pFrame = texture2D(uPosition, uv);
+        float scale = pFrame.z;
+        float velocity = pFrame.w;
+        vec2 refPos = texture2D(uPosRefs, uv).xy;
+        float time = uTime * 0.5;
+        vec2 curentPos = refPos;
+        vec2 pos = pFrame.xy;
+        pos *= 0.8;
+
+        float dist = distance(curentPos.xy, uRingPos);
+        float noise0 = snoise(vec3(curentPos.xy * 0.2 + vec2(18.4924, 72.9744), time * 0.5));
+        float dist1 = distance(curentPos.xy + (noise0 * 0.005), uRingPos);
+
+        float t = smoothstep(uRingRadius - (uRingWidth * 2.), uRingRadius, dist) - smoothstep(uRingRadius, uRingRadius + uRingWidth, dist1);
+        float t2 = smoothstep(uRingRadius - (uRingWidth2 * 2.), uRingRadius, dist) - smoothstep(uRingRadius, uRingRadius + uRingWidth2, dist1);
+        float t3 = smoothstep(uRingRadius + uRingWidth2, uRingRadius, dist);
+
+        t = pow(t, 2.);
+        t2 = pow(t2, 3.);
+        t += t2 * 3.;
+        t += t3 * 0.4;
+        t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
+
+        float nS = snoise(vec3(curentPos.xy * 2. + vec2(18.4924, 72.9744), time * 0.5));
+        t += pow((nS + 1.5) * 0.5, 2.) * 0.6;
+
+        float noise1 = snoise(vec3(curentPos.xy * 4. + vec2(88.494, 32.4397), time * 0.35));
+        float noise2 = snoise(vec3(curentPos.xy * 4. + vec2(50.904, 120.947), time * 0.35));
+        float noise3 = snoise(vec3(curentPos.xy * 20. + vec2(18.4924, 72.9744), time * 0.5));
+        float noise4 = snoise(vec3(curentPos.xy * 20. + vec2(50.904, 120.947), time * 0.5));
+
+        vec2 disp = vec2(noise1, noise2) * 0.03;
+        disp += vec2(noise3, noise4) * 0.005;
+
+        disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
+        disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
+
+        pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement;
+
+        float scaleDiff = t - scale;
+        scaleDiff *= 0.2;
+        scale += scaleDiff;
+
+        vec2 finalPos = curentPos + disp + (pos * 0.25);
+
+        velocity *= 0.5;
+        velocity += scale * 0.25;
+
+        gl_FragColor = vec4(finalPos, scale, velocity);
+      }
+    `;
+
+    // ============================================================
+    // RENDER shader（官网原文 + capsule 指向鼠标改造）
+    // ============================================================
+    const renderVertShader = `
+      precision highp float;
+      attribute vec4 seeds;
+      uniform sampler2D uPosition;
+      uniform float uTime, uParticleScale, uPixelRatio;
+      uniform int uColorScheme;
+      varying vec4 vSeeds;
+      varying float vVelocity, vScale;
+      varying vec2 vLocalPos, vScreenPos;
+      void main() {
+        vec4 pos = texture2D(uPosition, uv);
+        vSeeds = seeds;
+        vVelocity = pos.w;
+        vScale = pos.z;
+        vLocalPos = pos.xy;
+        vec4 viewSpace = modelViewMatrix * vec4(vec3(pos.xy, 0.), 1.0);
+        gl_Position = projectionMatrix * viewSpace;
+        vScreenPos = gl_Position.xy;
+        gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale);
+      }
+    `;
+
+    const renderFragShader = `
+      precision highp float;
+      varying vec4 vSeeds;
+      varying vec2 vScreenPos, vLocalPos;
+      varying float vScale, vVelocity;
+      uniform vec3 uColor1, uColor2, uColor3;
+      uniform vec2 uRingPos, uRez;
+      uniform float uAlpha, uTime, uCapsuleLen, uCapsuleWid;
+      uniform int uColorScheme;
+      ${noiseGLSL}
+      #define PI 3.14159265359
+
+      float sdRoundBox(vec2 p, vec2 b, vec4 r) {
+        r.xy = (p.x > 0.0) ? r.xy : r.zw;
+        r.x = (p.y > 0.0) ? r.x : r.y;
+        vec2 q = abs(p) - b + r.x;
+        return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
+      }
+      vec2 rotate(vec2 v, float a) {
+        float s = sin(a), c = cos(a);
+        return mat2(c, s, -s, c) * v;
+      }
+
+      void main() {
+        // 噪声驱动颜色（官网同款）
+        float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * 0.5));
+        noiseColor = (noiseColor + 1.) * 0.5;
+
+        // 胶囊指向 uRingPos（鼠标位置）
+        float angle = atan(vLocalPos.y - uRingPos.y, vLocalPos.x - uRingPos.x);
+        float noiseAngle = snoise(vec3(vLocalPos * 10. + vec2(18.4924, 72.9744), uTime * 0.85));
+        vec2 uv = gl_PointCoord.xy - 0.5;
+        uv.y *= -1.0;
+        uv = rotate(uv, -angle + (noiseAngle * 0.5));
+
+        // 颜色三段渐变（官网同款）
+        float h = 0.8;
+        float progress = smoothstep(0., .75, pow(noiseColor, 2.));
+        vec3 col = mix(mix(uColor1, uColor2, progress/h),
+                       mix(uColor2, uColor3, (progress - h) / (1.0 - h)),
+                       step(h, progress));
+
+        // 胶囊形（sdRoundBox — 圆角矩形，全圆角=胶囊）
+        float lenHalf = 0.5 * uCapsuleLen;
+        float widHalf = uCapsuleWid;
+        float rounded = sdRoundBox(uv, vec2(lenHalf, widHalf), vec4(widHalf));
+        rounded = smoothstep(0.1, 0.0, rounded);
+
+        float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
+        if (a < 0.01) discard;
+
+        col = clamp(col, 0., 1.);
+        col = mix(col, col * clamp(vVelocity, 0., 1.), float(uColorScheme));
+        gl_FragColor = vec4(col, clamp(a, 0., 1.));
+      }
+    `;
+
+    // ============================================================
+    // 初始化 GPU（对齐官网 init）
+    // ============================================================
+    function initGPU() {
+      posTex = createDataTexture(pointsData);
+      rt1 = createRT(); rt2 = createRT();
+      renderer.setRenderTarget(rt1); renderer.setClearColor(0, 0); renderer.clear();
+      renderer.setRenderTarget(rt2); renderer.setClearColor(0, 0); renderer.clear();
+      renderer.setRenderTarget(null);
+      everRendered = false;
+
+      // SIM scene
+      simScene = new THREE.Scene();
+      simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      simMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uPosition: { value: posTex },
+          uPosRefs: { value: posTex },
+          uRingPos: { value: new THREE.Vector2(0, 0) },
+          uTime: { value: 0 },
+          uDeltaTime: { value: 0 },
+          uRingRadius: { value: 0.175 },
+          uRingWidth: { value: CONFIG.ringWidth },
+          uRingWidth2: { value: CONFIG.ringWidth2 },
+          uRingDisplacement: { value: CONFIG.ringDisplacement },
+        },
+        vertexShader: `void main(){ gl_Position = vec4(position, 1.0); }`,
+        fragmentShader: simFragShader,
+        depthTest: false,
+        depthWrite: false,
+      });
+      simScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), simMaterial));
+
+      // RENDER geometry
+      const geom = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const uvs = new Float32Array(count * 2);
+      const seeds = new Float32Array(count * 4);
+      for (let i = 0; i < count; i++) {
+        const x = i % SIZE, y = Math.floor(i / SIZE);
+        uvs[i * 2] = x / SIZE;
+        uvs[i * 2 + 1] = y / SIZE;
+        seeds[i * 4] = Math.random();
+        seeds[i * 4 + 1] = Math.random();
+        seeds[i * 4 + 2] = Math.random();
+        seeds[i * 4 + 3] = Math.random();
+      }
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geom.setAttribute('seeds', new THREE.BufferAttribute(seeds, 4));
+      geom.setDrawRange(0, count);
+
+      renderMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: {
+          uPosition: { value: posTex },
+          uTime: { value: 0 },
+          uColor1: { value: new THREE.Color(CONFIG.colors[0]) },
+          uColor2: { value: new THREE.Color(CONFIG.colors[1]) },
+          uColor3: { value: new THREE.Color(CONFIG.colors[2]) },
+          uAlpha: { value: 1 },
+          uRingPos: { value: new THREE.Vector2(0, 0) },
+          uRez: { value: new THREE.Vector2(innerWidth, innerHeight) },
+          uParticleScale: { value: 1 },
+          uPixelRatio: { value: renderer.getPixelRatio() },
+          uColorScheme: { value: 0 },
+          uCapsuleLen: { value: 1.0 },
+          uCapsuleWid: { value: 0.2 },
+        },
+        vertexShader: renderVertShader,
+        fragmentShader: renderFragShader,
+      });
+
+      mesh = new THREE.Points(geom, renderMaterial);
+      mesh.position.set(0, 0, 0);
+      mesh.scale.set(5, -5, 5);
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    // ============================================================
+    // 构建粒子（对齐官网 createPoints + createPointsFromImage）
+    // ============================================================
+    async function buildParticles() {
+      // 先生成水母图片（用于密度过滤 + 最近邻）
+      const imageData = createJellyfishImageData(500);
+
+      // 固定密度泊松盘，只保留水母区域内的点
+      // 使用 shape=500x500 但过滤后只保留亮区粒子
+      // 为使粒子数接近官方 12418：减小 minDist/maxDist
+      const minD = linearMap(CONFIG.density, 0, 300, 4.5, 1.8);
+      const maxD = linearMap(CONFIG.density, 0, 300, 5.5, 2.5);
+      const base = poissonDiskFixed([500, 500], minD, maxD, 30);
+      // 过滤：只保留水母内的点和周边少量过渡点
+      const filtered = base.filter(p => {
+        const bright = imageData.data[(Math.round(p[0]) + Math.round(p[1]) * 500) * 4] / 255;
+        return bright > 0.02 || (bright > 0.005 && Math.random() < 0.15);
+      });
+      console.log(`Poisson: ${base.length} → filtered: ${filtered.length} (in jellyfish)`);
+      pointsData = [];
+      for (const p of filtered) {
+        pointsData.push(p[0] - 250, p[1] - 250);
+      }
+      count = filtered.length;
+
+      // （官方使用 uPosNearest 但当前 SIM shader 未引用 — 留空）
+
+      document.getElementById('loading').textContent =
+        `生成中… ${count} 个粒子`;
+
+      initGPU();
+    }
+
+    // ============================================================
+    // 交互：鼠标追踪 + GSAP 缓动
+    // ============================================================
+    function updateMouse(clientX, clientY) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouseNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      mouseIsOver = mouseNDC.x >= -1 && mouseNDC.x <= 1 && mouseNDC.y >= -1 && mouseNDC.y <= 1;
+    }
+
+    function checkHover() {
+      if (mouseIsOver) {
+        raycaster.setFromCamera(mouseNDC, camera);
+        const hits = raycaster.intersectObject(raycastPlane);
+        if (hits.length > 0) {
+          intersectionPoint.copy(hits[0].point);
+          isIntersecting = true;
+        } else isIntersecting = false;
+      } else isIntersecting = false;
+
+      if (isIntersecting && !lastHoverState) {
+        gsap.to(scene.userData, {
+          hoverProgress: 1, duration: 0.5, ease: 'power3.out',
+          onUpdate: () => { hoverProgress = scene.userData.hoverProgress; }
+        });
+        gsap.fromTo(scene.userData, { pushProgress: 0 }, {
+          pushProgress: 1, duration: 2, delay: 0.1, ease: 'power2.out',
+          onUpdate: () => { pushProgress = scene.userData.pushProgress; }
+        });
+      } else if (!isIntersecting && lastHoverState) {
+        gsap.to(scene.userData, {
+          hoverProgress: 0, duration: 0.5, ease: 'power3.out',
+          onUpdate: () => { hoverProgress = scene.userData.hoverProgress; }
+        });
+        gsap.fromTo(scene.userData, { pushProgress: 0 }, {
+          pushProgress: 1, duration: 2, delay: 0, ease: 'power2.out',
+          onUpdate: () => { pushProgress = scene.userData.pushProgress; }
+        });
+      }
+      lastHoverState = isIntersecting;
+    }
+
+    scene.userData.hoverProgress = 0;
+    scene.userData.pushProgress = 0;
+
+    addEventListener('mousemove', e => updateMouse(e.clientX, e.clientY));
+    addEventListener('mouseleave', () => { mouseIsOver = false; });
+    addEventListener('touchmove', e => {
+      const t = e.touches[0]; updateMouse(t.clientX, t.clientY);
+    }, { passive: true });
+    addEventListener('touchend', () => { mouseIsOver = false; });
+
+    // ============================================================
+    // 主循环（对齐官网 update + render + postRender）
+    // ============================================================
+    let lastTime = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!mesh) return;
+
+      const time = clock.getElapsedTime();
+      const dt = time - lastTime;
+      lastTime = time;
+
+      checkHover();
+
+      // mousePos = intersectionPoint * 0.175（官网同款）
+      const ringPos = new THREE.Vector2(
+        intersectionPoint.x * 0.175,
+        intersectionPoint.y * 0.175
+      );
+
+      // 计算 ringRadius（官网同款：随时间正弦变化）
+      const ringRadius = 0.175 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02;
+
+      // hover/push 交互影响 ring 参数
+      const pw = pushProgress * hoverProgress;
+      const ringWidthVal = CONFIG.ringWidth + pw * 0.08;
+      const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04;
+      const ringDispVal = CONFIG.ringDisplacement + pw * 0.06;
+
+      // particleScale（官网同款）
+      const particleScale = renderer.domElement.width / renderer.getPixelRatio() / 2000;
+
+      // --- SIM pass ---
+      simMaterial.uniforms.uPosition.value = everRendered ? rt1.texture : posTex;
+      simMaterial.uniforms.uRingPos.value = ringPos;
+      simMaterial.uniforms.uTime.value = time;
+      simMaterial.uniforms.uDeltaTime.value = dt;
+      simMaterial.uniforms.uRingRadius.value = ringRadius;
+      simMaterial.uniforms.uRingWidth.value = ringWidthVal;
+      simMaterial.uniforms.uRingWidth2.value = ringWidth2Val;
+      simMaterial.uniforms.uRingDisplacement.value = ringDispVal;
+
+      renderer.setRenderTarget(rt2);
+      renderer.render(simScene, simCamera);
+      renderer.setRenderTarget(null);
+
+      // --- RENDER pass ---
+      renderMaterial.uniforms.uPosition.value = everRendered ? rt2.texture : posTex;
+      renderMaterial.uniforms.uRingPos.value = ringPos;
+      renderMaterial.uniforms.uTime.value = time;
+      renderMaterial.uniforms.uParticleScale.value = particleScale;
+
+      renderer.clear();
+      renderer.render(scene, camera);
+
+      // --- ping-pong ---
+      [rt1, rt2] = [rt2, rt1];
+      everRendered = true;
+    }
+
+    // ============================================================
+    // 启动
+    // ============================================================
+    buildParticles().then(() => {
+      animate();
+      console.log(`Jellyfish capsule particles started · count = ${count}`);
+    });
+
+    // ============================================================
+    // resize
+    // ============================================================
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      if (renderMaterial) {
+        renderMaterial.uniforms.uRez.value.set(innerWidth, innerHeight);
+        renderMaterial.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+      }
+    });
+  </script>
+</body>
+</html>
