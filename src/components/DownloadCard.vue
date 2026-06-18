@@ -128,8 +128,15 @@ const simFragShader = `
     float velocity = pFrame.w;
     vec2 refPos = texture2D(uPosRefs, uv).xy;
     float time = uTime * 0.5;
-    // breath: scale reference positions outward (inhale) / inward (exhale)
-    vec2 curentPos = refPos * (0.9 + uBreath * 0.2);
+    // breath: edge-weighted — only the rim contracts/expands, center stays still
+    float distFromCenter = length(refPos);
+    float edgeWeight = smoothstep(0.15, 0.5, distFromCenter);
+    float ang = atan(refPos.y, refPos.x);
+    // irregular wavy rim, not a perfect circle
+    float wave = sin(ang * 5.0 + uTime * 1.2) * 0.5 + sin(ang * 8.0 - uTime * 0.7) * 0.3;
+    // uBreath: 0 = contract (rim pulled inward), 1 = expand (rim spreads out)
+    float breathOffset = (uBreath - 0.5) * 0.7 + wave * 0.12;
+    vec2 curentPos = refPos * (1.0 + breathOffset * edgeWeight);
     vec2 pos = pFrame.xy;
     pos *= 0.8;
 
