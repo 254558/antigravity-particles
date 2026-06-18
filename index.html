@@ -294,6 +294,12 @@
         scale += scaleDiff;
 
         vec2 finalPos = curentPos + disp + (pos * 0.25);
+        // 限制位移幅度：不让粒子飘离 rest position 太远
+        vec2 dirFromRest = finalPos - refPos;
+        float maxDist = 0.35;
+        if (length(dirFromRest) > maxDist) {
+          finalPos = refPos + normalize(dirFromRest) * maxDist;
+        }
 
         velocity *= 0.5;
         velocity += scale * 0.25;
@@ -361,12 +367,14 @@
         float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * 0.5));
         noiseColor = (noiseColor + 1.) * 0.5;
 
-        // 胶囊指向 uRingPos（鼠标位置）
+        // 胶囊端点指向 uRingPos（鼠标位置）
+        // 计算从粒子到鼠标的方向角
         float angle = atan(vLocalPos.y - uRingPos.y, vLocalPos.x - uRingPos.x);
         float noiseAngle = snoise(vec3(vLocalPos * 10. + vec2(18.4924, 72.9744), uTime * 0.85));
+        float finalAngle = -angle + (noiseAngle * 0.5);
         vec2 uv = gl_PointCoord.xy - 0.5;
         uv.y *= -1.0;
-        uv = rotate(uv, -angle + (noiseAngle * 0.5));
+        uv = rotate(uv, finalAngle);
 
         // 颜色三段渐变（官网同款）
         float h = 0.8;
@@ -375,13 +383,17 @@
                        mix(uColor2, uColor3, (progress - h) / (1.0 - h)),
                        step(h, progress));
 
-        // 胶囊形（sdRoundBox — 圆角矩形，全圆角=胶囊）
+        // 胶囊形：一端在原点（粒子位置），另一端指向鼠标方向
         // 离环心越近，胶囊越短越小
         float distFactor = vRingDist * 2.0 + 0.15;
         distFactor = clamp(distFactor, 0.2, 1.0);
-        float lenHalf = 0.5 * uCapsuleLen * distFactor;
-        float widHalf = uCapsuleWid * distFactor;
-        float rounded = sdRoundBox(uv, vec2(lenHalf, widHalf), vec4(widHalf));
+        float capLen = uCapsuleLen * distFactor;
+        float capWid = uCapsuleWid * distFactor;
+        // 胶囊形：用 sdRoundBox 绘制圆角胶囊，旋转后 x+ 指向鼠标方向
+        // 胶囊居中在 uv 原点，左右对称，两端都是圆头
+        // 原本的 gl_PointSize 已经让点随距离衰减，旋转后胶囊指向鼠标方向
+        float lenHalf = capLen * 0.5;
+        float rounded = sdRoundBox(uv, vec2(lenHalf, capWid), vec4(capWid));
         rounded = smoothstep(0.1, 0.0, rounded);
 
         float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
@@ -490,10 +502,10 @@
       const minD = linearMap(CONFIG.density, 0, 300, 4.5, 1.8);
       const maxD = linearMap(CONFIG.density, 0, 300, 5.5, 2.5);
       const base = poissonDiskFixed([500, 500], minD, maxD, 30);
-      // 过滤：只保留水母内的点和周边少量过渡点
+      // 过滤：只保留水母轮廓内的粒子（去掉微弱的边缘扩散）
       const filtered = base.filter(p => {
         const bright = imageData.data[(Math.round(p[0]) + Math.round(p[1]) * 500) * 4] / 255;
-        return bright > 0.02 || (bright > 0.005 && Math.random() < 0.15);
+        return bright > 0.08;
       });
       console.log(`Poisson: ${base.length} → filtered: ${filtered.length} (in jellyfish)`);
       pointsData = [];
