@@ -17,7 +17,7 @@ import { noiseGLSL } from '../composables/useNoiseGLSL.js'
 const SIZE = 256
 const CONFIG = {
   density: 220,
-  cameraZoom: 5.0,
+  cameraZoom: 6.0,
   ringWidth: 0.15,
   ringWidth2: 0.05,
   ringDisplacement: 0.23,
