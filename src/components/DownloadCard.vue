@@ -2,8 +2,10 @@
   <div class="download-card" ref="cardRef">
     <div class="card-overlay">
       <h1>反重力</h1>
-      <p>叶文洁，快按按钮，在搞什么啊？</p>
-
+      <div class="download-btns">
+        <a class="download-btn download-btn-primary" href="#">Download for Apple Silicon</a>
+        <a class="download-btn download-btn-secondary" href="#">Download for Intel</a>
+      </div>
     </div>
   </div>
 </template>

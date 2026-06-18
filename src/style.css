@@ -11,6 +11,16 @@ html, body {
   width: 100%; min-height: 100%;
   background: #000;
   font-family: system-ui, sans-serif;
+  overflow-x: hidden;
+}
+/* 隐藏滚动条但保留滚动功能 */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+html, body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 body {
   display: flex; flex-direction: column;
@@ -41,8 +51,8 @@ body {
   pointer-events: none;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: 40px;
-  text-align: center;
+  padding: 40px 10%;
+  text-align: left;
   transform: translateY(-80px);
 }
 .card-overlay .logo {
@@ -53,11 +63,13 @@ body {
   font-weight: 500; letter-spacing: -0.3px;
   margin-bottom: 8px;
   font-family: 'Google Sans Flex', system-ui, sans-serif;
+  width: 100%;
 }
 .card-overlay p {
   color: rgba(255,255,255,0.55);
   font-size: clamp(13px, 1.6vw, 16px);
   margin-bottom: 28px;
+  width: 100%;
 }
 .card-overlay .btn {
   pointer-events: auto;
@@ -68,6 +80,41 @@ body {
   transition: transform .15s;
 }
 .card-overlay .btn:hover { transform: scale(1.04); }
+
+/* ── 下载按钮组 ── */
+.download-btns {
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+  margin-top: 12px;
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 32px;
+  border-radius: 999px;
+  font-family: 'Google Sans Flex', system-ui, sans-serif;
+  font-size: clamp(13px, 1.2vw, 16px);
+  font-weight: 500;
+  text-decoration: none;
+  transition: transform .15s, opacity .15s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.download-btn:hover { transform: scale(1.04); }
+.download-btn-primary {
+  background: #fff;
+  color: #000;
+  border: none;
+}
+.download-btn-secondary {
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(255,255,255,0.2);
+}
 
 /* ── 图标波浪 ── */
 .agent-first-section {
