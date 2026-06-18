@@ -57,39 +57,7 @@
       pointer-events: none; z-index: 1;
     }
 
-    /* ── 图标波浪（官网复刻）── */
-    .agent-first-section {
-      position: relative; margin: 20px auto 0;
-      width: 100%; max-width: 1440px;
-      overflow-x: clip;
-      padding: 40px 0;
-    }
-    .icon-list {
-      display: flex; flex-wrap: nowrap; gap: 8px;
-      justify-content: center;
-      list-style: none; margin: 20px 0 0; padding: 0;
-    }
-    .icon-list li { padding: 0; list-style: none; }
-    .bouncer {
-      background: rgba(183,191,217,0.09);
-      border: 1px solid rgba(255,255,255,0.15);
-      will-change: transform;
-      backface-visibility: hidden;
-      display: flex; align-items: center; justify-content: center;
-      font-family: 'Material Symbols Outlined';
-      font-size: 36px;
-      border-radius: 50%;
-      aspect-ratio: 1;
-      position: relative;
-      width: 98px;
-      font-weight: 300;
-      font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'ROND' 50, 'opsz' 48;
-      color: #c9ced6;
-      user-select: none;
-    }
-    .bouncer:nth-child(2) { z-index: 2; }
-
-    /* ── For developers / For organizations 双卡片 ── */
+	    /* ── For developers / For organizations 双卡片 ── */
     .try-solutions-section {
       width: 100%; max-width: 1440px;
       margin: 20px auto 0;
@@ -150,38 +118,38 @@
     </div>
   </div>
 
-  <!-- 图标波浪（官网复刻） -->
-  <section class="agent-first-section">
-    <ul class="icon-list" id="iconList"></ul>
-  </section>
+	  <!-- For developers / For organizations — 双卡片（官网 landing-try-solutions 风格） -->
+	  <section class="try-solutions-section">
+	    <div class="try-grid">
+	      <!-- 卡片 1：For developers -->
+	      <div class="try-card-wrap">
+	        <div class="morphing-card" id="morphCard1">
+	          <canvas class="particles" id="mc1"></canvas>
+	          <div class="mc-overlay">
+	            <div class="mc-eyebrow">For developers</div>
+	            <div class="mc-title">Achieve new heights</div>
+	            <div class="mc-desc">Download<br>Now Available!</div>
+	          </div>
+	        </div>
+	      </div>
+	      <!-- 卡片 2：For organizations -->
+	      <div class="try-card-wrap">
+	        <div class="morphing-card" id="morphCard2">
+	          <canvas class="particles" id="mc2"></canvas>
+	          <div class="mc-overlay">
+	            <div class="mc-eyebrow">For organizations</div>
+	            <div class="mc-title">Level up your entire team</div>
+	            <div class="mc-desc">Read More</div>
+	          </div>
+	        </div>
+	      </div>
+	    </div>
+	  </section>
 
-  <!-- For developers / For organizations — 双卡片（官网 landing-try-solutions 风格） -->
-  <section class="try-solutions-section">
-    <div class="try-grid">
-      <!-- 卡片 1：For developers -->
-      <div class="try-card-wrap">
-        <div class="morphing-card" id="morphCard1">
-          <canvas class="particles" id="mc1"></canvas>
-          <div class="mc-overlay">
-            <div class="mc-eyebrow">For developers</div>
-            <div class="mc-title">Achieve new heights</div>
-            <div class="mc-desc">Download<br>Now Available!</div>
-          </div>
-        </div>
-      </div>
-      <!-- 卡片 2：For organizations -->
-      <div class="try-card-wrap">
-        <div class="morphing-card" id="morphCard2">
-          <canvas class="particles" id="mc2"></canvas>
-          <div class="mc-overlay">
-            <div class="mc-eyebrow">For organizations</div>
-            <div class="mc-title">Level up your entire team</div>
-            <div class="mc-desc">Read More</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+	  <!-- 图标波浪（官网复刻） -->
+	  <section class="agent-first-section">
+	    <ul class="icon-list" id="iconList"></ul>
+	  </section>
 
 	  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 	  <!-- 图片直接加载，无需 shape_data.js -->
