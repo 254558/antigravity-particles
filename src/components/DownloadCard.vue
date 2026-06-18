@@ -140,7 +140,9 @@ const simFragShader = `
     t = pow(t, 2.);
     t2 = pow(t2, 3.);
     t += t2 * 3.;
-    t += t3 * 0.4;
+    // far from ring → fade to 0
+    float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
+    t *= farFade;
     t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
 
     float nS = snoise(vec3(curentPos.xy * 2. + vec2(18.4924, 72.9744), time * 0.5));
@@ -248,10 +250,11 @@ const renderFragShader = `
     float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * .5));
     noiseColor = (noiseColor + 1.) * .5;
 
-    float angle = atan(vLocalPos.y - uRingPos.y, vLocalPos.x - uRingPos.x);
+    vec2 dirToRing = uRingPos - vLocalPos;
+    float angle = atan(dirToRing.y, dirToRing.x);
     vec2 uv = gl_PointCoord.xy - 0.5;
     uv.y *= -1.;
-    uv = rotate(uv, -angle + (noiseAngle * .5));
+    uv = rotate(uv, angle + (noiseAngle * .5)); // capsule long axis points toward ring
 
     float h = 0.8;
     float progress = smoothstep(0., .75, pow(noiseColor, 2.));
