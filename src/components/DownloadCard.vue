@@ -17,7 +17,7 @@ import { noiseGLSL } from '../composables/useNoiseGLSL.js'
 const SIZE = 256
 const CONFIG = {
   density: 220,
-  cameraZoom: 3.5,
+  cameraZoom: 4.2,
   ringWidth: 0.15,
   ringWidth2: 0.05,
   ringDisplacement: 0.23,
@@ -119,7 +119,7 @@ const simFragShader = `
   uniform sampler2D uPosition, uPosRefs;
   uniform vec2 uRingPos;
   uniform float uTime, uDeltaTime;
-  uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement, uBreath;
+  uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement;
   ${noiseGLSL}
   void main() {
     vec2 uv = gl_FragCoord.xy / 256.0;
@@ -128,17 +128,7 @@ const simFragShader = `
     float velocity = pFrame.w;
     vec2 refPos = texture2D(uPosRefs, uv).xy;
     float time = uTime * 0.5;
-    // breath: one continuous bell — center drifts slightly, rim moves a lot,
-    // smooth gradient (no dead zone) so it reads as a single contracting surface
-    float distFromCenter = length(refPos);
-    float edgeWeight = pow(clamp(distFromCenter / 0.5, 0.0, 1.0), 1.5);
-    float ang = atan(refPos.y, refPos.x);
-    // irregular wavy rim, not a perfect circle
-    float wave = sin(ang * 5.0 + uTime * 1.2) * 0.5 + sin(ang * 8.0 - uTime * 0.7) * 0.3;
-    // uBreath: 0 = contract (gather inward), 1 = expand (spread out)
-    float contract = (1.0 - uBreath);
-    float breathOffset = -contract * 0.45 + uBreath * 0.25 + wave * 0.10;
-    vec2 curentPos = refPos * (1.0 + breathOffset * edgeWeight);
+    vec2 curentPos = refPos;
     vec2 pos = pFrame.xy;
     pos *= 0.8;
 
@@ -157,9 +147,6 @@ const simFragShader = `
     float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
     t *= farFade;
     t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
-
-    float nS = snoise(vec3(curentPos.xy * 2. + vec2(18.4924, 72.9744), time * 0.5));
-    t += pow((nS + 1.5) * 0.5, 2.) * 0.6;
 
     float noise1 = snoise(vec3(curentPos.xy * 4. + vec2(88.494, 32.4397), time * 0.35));
     float noise2 = snoise(vec3(curentPos.xy * 4. + vec2(50.904, 120.947), time * 0.35));
@@ -232,7 +219,10 @@ const renderVertShader = `
     float minScale = .25;
     minScale += float(uColorScheme) * .75;
 
-    gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio);
+    // edge particles grow larger — smooth ramp from center to rim
+    float edgeSize = pow(clamp(length(pos.xy) / 0.5, 0.0, 1.0), 1.5);
+
+    gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio) + (edgeSize * 12.0 * uPixelRatio);
   }
 `
 
@@ -275,7 +265,7 @@ const renderFragShader = `
     vec3 col = mix(mix(uColor1, uColor2, progress/h), mix(uColor2, uColor3, (progress - h)/(1.0 - h)), step(h, progress));
     vec3 color = col;
 
-    float rounded = sdRoundBox(uv, vec2(0.5, 0.2), vec4(.25));
+    float rounded = sdRoundBox(uv, vec2(0.5, 0.13), vec4(.2));
     rounded = smoothstep(.1, 0., rounded);
 
     float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
@@ -331,11 +321,10 @@ function initGPU() {
       uRingPos: { value: new THREE.Vector2(0, 0) },
       uTime: { value: 0 },
       uDeltaTime: { value: 0 },
-      uRingRadius: { value: 0.175 },
+      uRingRadius: { value: 0.28 },
       uRingWidth: { value: CONFIG.ringWidth },
       uRingWidth2: { value: CONFIG.ringWidth2 },
       uRingDisplacement: { value: CONFIG.ringDisplacement },
-      uBreath: { value: 0 },
     },
     vertexShader: `void main(){ gl_Position = vec4(position, 1.0); }`,
     fragmentShader: simFragShader,
@@ -398,10 +387,15 @@ function buildParticles() {
   const maxD = linearMap(CONFIG.density, 0, 300, 11, 3)
   const base = poissonDiskFixed([500, 500], minD, maxD, 20)
   pointsData = []
+  // keep only points inside a circle → round jellyfish bell, not square
+  const maxR = 230
   for (const p of base) {
-    pointsData.push(p[0] - 250, p[1] - 250)
+    const dx = p[0] - 250, dy = p[1] - 250
+    if (dx * dx + dy * dy <= maxR * maxR) {
+      pointsData.push(dx, dy)
+    }
   }
-  count = base.length
+  count = pointsData.length / 2
   document.getElementById('loading').textContent = `生成中… ${count} 个粒子`
   initGPU()
 }
@@ -459,9 +453,7 @@ function animate() {
   )
   smoothRingPos.lerp(targetPos, 0.03)
   const ringPos = smoothRingPos.clone()
-  const ringRadius = 0.175 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
-  // breath pulse: 0~1 sinusoid, ~5s per cycle for a slow calm inhale/exhale
-  const breathPulse = 0.5 + 0.5 * Math.sin(time * 1.2)
+  const ringRadius = 0.28 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
@@ -479,7 +471,6 @@ function animate() {
   simMaterial.uniforms.uRingWidth.value = ringWidthVal
   simMaterial.uniforms.uRingWidth2.value = ringWidth2Val
   simMaterial.uniforms.uRingDisplacement.value = ringDispVal
-  simMaterial.uniforms.uBreath.value = breathPulse
 
   renderer.setRenderTarget(rt2)
   renderer.render(simScene, simCamera)
