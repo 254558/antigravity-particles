@@ -95,12 +95,12 @@ const simFrag = `
     vec4 pf=texture2D(uPosition,uv); float s=pf.z, v=pf.w;
     vec2 rp=texture2D(uPosRefs,uv).xy, np=texture2D(uPosNearest,uv).xy;
     float sd=hash(uv).x, sd2=hash(uv).y, t=uTime*.5, le=3.+sin(sd2*100.)*1., lt=mod(sd*100.+t,le);
-			    vec2 p=pf.xy;
-			    // 所有粒子可吸附，但离目标太远的粒子不动
-			    vec2 tg=mix(rp,np,uIsHovering);
-			    vec2 dPos=tg-p;
-			    float d=length(dPos);
-			    if(d>.001&&d<.1) p+=normalize(dPos)*min(d*.4, .1);
+				    vec2 p=pf.xy;
+				    // 所有粒子可吸附，但离目标太远的粒子不动
+				    vec2 tg=mix(rp,np,uIsHovering);
+				    vec2 dPos=tg-p;
+				    float d=length(dPos);
+				    if(d>.001) p+=normalize(dPos)*min(d*.4, .1);
 			    // 循环流动: 粒子到达目标后重置到随机位置，周围新粒子源源不断被吸附
 				    float arrival=1.-smoothstep(.001,.03,d);
 				    float resetPhase=fract(sd*17.3+uTime*.3);
