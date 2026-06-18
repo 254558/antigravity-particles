@@ -28,6 +28,19 @@ function frame() {
   phase = (phase + step) % WAVELENGTH
   const listRect = listRef.value?.getBoundingClientRect()
   if (!listRect) { animId = requestAnimationFrame(frame); return }
+
+  // 先计算所有图标的缩放值
+  const scales = []
+  for (let i = 0; i < bouncers.value.length; i++) {
+    const el = bouncers.value[i]
+    if (!el) { scales.push(1); continue }
+    const r = el.getBoundingClientRect()
+    const pos = r.left - listRect.left + r.width / 2
+    const v = (pos + phase) / WAVELENGTH * Math.PI * 2
+    const sc = 0.6 + 0.4 * (Math.sin(v) * 0.5 + 0.5)
+    scales.push(sc)
+  }
+
   for (let i = 0; i < bouncers.value.length; i++) {
     const el = bouncers.value[i]
     if (!el) continue
@@ -35,7 +48,12 @@ function frame() {
     const pos = r.left - listRect.left + r.width / 2
     const v = (pos + phase) / WAVELENGTH * Math.PI * 2
     const ty = Math.sin(v) * AMPLITUDE
-    el.style.transform = `translateY(${ty.toFixed(2)}px)`
+    const sc = scales[i]
+    // 根据相邻图标的缩放差，水平平移来补偿空隙
+    const gapL = i > 0 ? (1 - scales[i - 1]) * 25 : 0
+    const gapR = i < scales.length - 1 ? (1 - scales[i + 1]) * 25 : 0
+    const tx = (gapL - gapR) * 0.5
+    el.style.transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(2)}px) scale(${sc.toFixed(3)})`
   }
   animId = requestAnimationFrame(frame)
 }
