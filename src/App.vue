@@ -13,6 +13,14 @@
             :scale="1.5"
             :yOffset="0.1"
           />
+          <div class="morph-overlay left">
+            <span class="morph-badge">Available at no charge</span>
+            <h2 class="morph-title">
+              <span class="morph-title-bold">For developers</span>
+              <span class="morph-title-light">Achieve new heights</span>
+            </h2>
+            <a class="morph-btn morph-btn-primary" href="#">Download</a>
+          </div>
         </div>
       </div>
       <div class="try-card-wrap">
@@ -24,6 +32,14 @@
             :scale="1.5"
             :yOffset="0"
           />
+          <div class="morph-overlay right">
+            <span class="morph-badge">Now Available!</span>
+            <h2 class="morph-title">
+              <span class="morph-title-bold">For organizations</span>
+              <span class="morph-title-light">Level up your entire team</span>
+            </h2>
+            <a class="morph-btn morph-btn-secondary" href="#">Read More</a>
+          </div>
         </div>
       </div>
     </div>
