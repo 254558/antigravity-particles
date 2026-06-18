@@ -22,7 +22,7 @@ const CONFIG = {
   ringWidth2: 0.05,
   ringDisplacement: 0.23,
   particlesScale: 0.65,
-  colors: ['#4d8cff', '#4d8cff', '#4d8cff'],
+  colors: ['#7aaeff', '#7aaeff', '#7aaeff'],
 }
 const PI = Math.PI
 
@@ -37,6 +37,7 @@ let count, pointsData
 let posTex, rt1, rt2, everRendered = false
 let mesh, simMaterial, renderMaterial, simScene, simCamera
 let animId = null
+let smoothRingPos = new THREE.Vector2(0, 0)
 
 function linearMap(x, a, b, c, d) {
   return ((x - a) * (d - c)) / (b - a) + c
@@ -437,10 +438,13 @@ function animate() {
   const dt = time - (clock.elapsedTime - clock.getDelta())
   checkHover()
 
-  const ringPos = new THREE.Vector2(
+  // smooth lerp ring position toward mouse
+  const targetPos = new THREE.Vector2(
     intersectionPoint.x * 0.175,
     intersectionPoint.y * -0.175
   )
+  smoothRingPos.lerp(targetPos, 0.03)
+  const ringPos = smoothRingPos.clone()
   const ringRadius = 0.175 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
