@@ -129,6 +129,25 @@ body {
   justify-content: center;
   list-style: none; margin: 20px 0 0; padding: 0;
 }
+
+/* ── 打字机 ── */
+.typer-section {
+  width: 100vw;
+  padding: 48px 10% 64px 5%;
+  background: #000;
+  text-align: left;
+  font-family: 'Google Sans Flex', system-ui, sans-serif;
+  font-size: clamp(28px, 3.5vw, 48px);
+}
+.typer-section .vue-typer {
+  --char-typed-color: #fff;
+  --char-selected-color: #fff;
+  --caret-idle-color: #fff;
+  --caret-typing-color: #fff;
+  --caret-selecting-color: #fff;
+  --caret-erasing-color: #fff;
+  --caret-complete-color: #fff;
+}
 .icon-list li { padding: 0; list-style: none; }
 .bouncer {
   background: rgba(255,255,255,0.10);

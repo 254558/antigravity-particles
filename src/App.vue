@@ -2,6 +2,9 @@
   <div class="loading" id="loading">生成粒子中…</div>
   <DownloadCard />
   <IconWave />
+  <div class="typer-section">
+    <Typer :repeat="0" :erase-delay="9999999" :erase-style="'clear'" text="Typewriter effect in Vue 3" />
+  </div>
   <section class="try-solutions-section">
     <div class="try-grid">
       <div class="try-card-wrap">
@@ -47,6 +50,8 @@
 </template>
 
 <script setup>
+import { Typer } from 'vue3-typer'
+import 'vue3-typer/dist/vue-typer.css'
 import DownloadCard from './components/DownloadCard.vue'
 import IconWave from './components/IconWave.vue'
 import MorphCard from './components/MorphCard.vue'

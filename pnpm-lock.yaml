@@ -17,6 +17,9 @@ importers:
       vue:
         specifier: ^3.5.34
         version: 3.5.38
+      vue3-typer:
+        specifier: ^1.0.0
+        version: 1.0.0(vue@3.5.38)
     devDependencies:
       '@vitejs/plugin-vue':
         specifier: ^6.0.6
@@ -307,6 +310,9 @@ packages:
     resolution: {integrity: sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==}
     engines: {node: '>= 12.0.0'}
 
+  lodash.split@4.4.2:
+    resolution: {integrity: sha512-kn1IDX0aHfg0FsnPIyxCHTamZXt3YK3aExRH1LW8YhzP6+sCldTm8+E4aIg+nSmM6R4eqdWGrXWtfYI961bwIw==}
+
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
@@ -387,6 +393,11 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  vue3-typer@1.0.0:
+    resolution: {integrity: sha512-XliYAfNxPdu3D2zgiKzzr6I7TJR/Qs4tqmn5RbPxvn8Me3AjAabX90U1oizGlFrH/9qNEsyX0NMyDB0Z/NkqPQ==}
+    peerDependencies:
+      vue: ^3.2
 
   vue@3.5.38:
     resolution: {integrity: sha512-vAMKHfImQlYSy0C+PBue4s3ERZ2xGKfgZg5GXAsLInq1dyh2H78ILVP5sK0KPFPVW4kv+OGCIvBEondcjpZp7A==}
@@ -620,6 +631,8 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.32.0
       lightningcss-win32-x64-msvc: 1.32.0
 
+  lodash.split@4.4.2: {}
+
   magic-string@0.30.21:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -678,6 +691,11 @@ snapshots:
       tinyglobby: 0.2.17
     optionalDependencies:
       fsevents: 2.3.3
+
+  vue3-typer@1.0.0(vue@3.5.38):
+    dependencies:
+      lodash.split: 4.4.2
+      vue: 3.5.38
 
   vue@3.5.38:
     dependencies:
