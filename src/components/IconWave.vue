@@ -26,7 +26,7 @@ let phase = 0
 const step = WAVELENGTH / (7 * 60)
 
 function frame() {
-  phase = (phase + step) % WAVELENGTH
+  phase = (phase + step * 3) % WAVELENGTH
   const listRect = listRef.value?.getBoundingClientRect()
   if (!listRect) { animId = requestAnimationFrame(frame); return }
 
@@ -41,7 +41,7 @@ function frame() {
     const r = el.getBoundingClientRect()
     const pos = r.left - listRect.left + r.width / 2
     const v = (pos + phase) / WAVELENGTH * Math.PI * 2
-    const sc = 0.6 + 0.4 * (Math.sin(v) * 0.5 + 0.5)
+    const sc = 1
     scales.push(sc)
   }
 
@@ -53,11 +53,7 @@ function frame() {
     const v = (pos + phase) / WAVELENGTH * Math.PI * 2
     const ty = Math.sin(v) * AMPLITUDE
     const sc = scales[i]
-    // 根据相邻图标的缩放差，水平平移来补偿空隙
-    const gapL = i > 0 ? (1 - scales[i - 1]) * 25 : 0
-    const gapR = i < scales.length - 1 ? (1 - scales[i + 1]) * 25 : 0
-    const tx = (gapL - gapR) * 0.5
-    el.style.transform = `translate(${(tx - scrollOffset).toFixed(1)}px, ${ty.toFixed(2)}px) scale(${sc.toFixed(3)})`
+    el.style.transform = `translate(${(-scrollOffset).toFixed(1)}px, ${ty.toFixed(2)}px)`
   }
   animId = requestAnimationFrame(frame)
 }
