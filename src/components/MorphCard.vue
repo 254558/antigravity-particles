@@ -111,15 +111,15 @@ const simFrag = `
     vec2 rp=texture2D(uPosRefs,uv).xy, np=texture2D(uPosNearest,uv).xy;
     float sd=hash(uv).x, sd2=hash(uv).y, t=uTime*.5, le=3.+sin(sd2*100.)*1., lt=mod(sd*100.+t,le);
 	    vec2 p=pf.xy;
-	    // 所有粒子都是可吸附的，hover 时向边缘目标移动
-	    vec2 tg=np;
+	    // 所有粒子可吸附，但离目标太远的粒子不动
+	    vec2 tg=mix(rp,np,uIsHovering);
 	    vec2 dPos=tg-p;
 	    float d=length(dPos);
-	    if(d>.001&&uIsHovering>.01) p+=normalize(dPos)*min(d*.08, .02)*uIsHovering;
+	    if(d>.001&&d<.8) p+=normalize(dPos)*min(d*.1, .035);
 	    // 注: 无生命周期重置 — 粒子随 tg 自然流动即可
 	    // scale: 生命周期脉动 + hover 时接近目标的粒子增大
 	    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
-	    ts+=smoothstep(.05,0.,d)*.8*uIsHovering;
+	    ts+=smoothstep(.05,0.,d)*.15*uIsHovering;
 	    s+=(ts-s)*.15;
 	    // velocity: hover 时靠近目标的粒子变亮
 	    v=smoothstep(.3,.001,d)*uIsHovering;
@@ -198,31 +198,32 @@ onMounted(async () => {
   const count = Math.min(totalPts.length, SIZE * SIZE)
 
   // 3. 生成位置数据
-  // 边缘粒子: base=随机的散落位置, target=边缘像素位置
-  // 散点粒子: base=随机位置, target=同一随机位置（hover 时不动）
+  // 每个粒子: base=随机的散落位置, target=离它最近的边缘像素位置
   const base = new Float32Array(count * 2)
   const nearest = new Float32Array(count * 2)
 
+  // 预计算所有边缘点的归一化坐标
+  const edgeNorm = edgePts.map(([ex, ey]) => [
+    ((ex - 250) / 250) * scl,
+    ((250 - ey) / 250) * scl + yOff
+  ])
+
   for (let i = 0; i < count; i++) {
-    const edgeId = i < edgePts.length
-    if (edgeId) {
-      // 边缘粒子: 初始在随机位置，目标在边缘像素
-      const rx = Math.random() * 500, ry = Math.random() * 500
-      base[i * 2] = (rx - 250) / 250
-      base[i * 2 + 1] = (250 - ry) / 250
-      const ex = edgePts[i][0], ey = edgePts[i][1]
-      nearest[i * 2] = ((ex - 250) / 250) * scl
-      nearest[i * 2 + 1] = ((250 - ey) / 250) * scl + yOff
-    } else {
-      // 散点粒子: 始终在原位
-      const rx = totalPts[i][0], ry = totalPts[i][1]
-      const nx = (rx - 250) / 250
-      const ny = (250 - ry) / 250
-      base[i * 2] = nx
-      base[i * 2 + 1] = ny
-      nearest[i * 2] = nx
-      nearest[i * 2 + 1] = ny
+    // 随机初始位置
+    const rx = Math.random() * 500, ry = Math.random() * 500
+    const bx = (rx - 250) / 250, by = (250 - ry) / 250
+    base[i * 2] = bx
+    base[i * 2 + 1] = by
+
+    // 找最近的边缘点作为目标
+    let bestD = Infinity, bestNx = bx, bestNy = by
+    for (let j = 0; j < edgeNorm.length; j++) {
+      const dx = edgeNorm[j][0] - bx, dy = edgeNorm[j][1] - by
+      const dd = dx * dx + dy * dy
+      if (dd < bestD) { bestD = dd; bestNx = edgeNorm[j][0]; bestNy = edgeNorm[j][1] }
     }
+    nearest[i * 2] = bestNx
+    nearest[i * 2 + 1] = bestNy
   }
 
   // 4. Three.js
@@ -306,13 +307,13 @@ onMounted(async () => {
   // 8. Hover
   mouseEnterHandler = () => {
     gsap.to({ v: hp }, {
-      v: 1, duration: 1.6, ease: 'power2.out',
+      v: 1, duration: 0.2, ease: 'power2.out',
       onUpdate() { hp = this.targets()[0].v }
     })
   }
   mouseLeaveHandler = () => {
     gsap.to({ v: hp }, {
-      v: 0, duration: 1.2, ease: 'power3.out',
+      v: 0, duration: 0.2, ease: 'power2.out',
       onUpdate() { hp = this.targets()[0].v }
     })
   }
