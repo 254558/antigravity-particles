@@ -17,7 +17,7 @@ import { noiseGLSL } from '../composables/useNoiseGLSL.js'
 const SIZE = 256
 const CONFIG = {
   density: 220,
-  cameraZoom: 4.2,
+  cameraZoom: 5.0,
   ringWidth: 0.15,
   ringWidth2: 0.05,
   ringDisplacement: 0.23,
@@ -143,9 +143,11 @@ const simFragShader = `
     t = pow(t, 2.);
     t2 = pow(t2, 3.);
     t += t2 * 3.;
-    // far from ring → fade to 0
+    // far from ring → fade down, but keep a faint sparse glow toward center
     float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
-    t *= farFade;
+    // center region: small floor so the middle isn't fully empty (sparse dots)
+    float centerGlow = 0.12 * (1.0 - smoothstep(0.0, uRingRadius * 0.8, dist));
+    t = t * farFade + centerGlow;
     t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
 
     float noise1 = snoise(vec3(curentPos.xy * 4. + vec2(88.494, 32.4397), time * 0.35));
@@ -256,6 +258,9 @@ const renderFragShader = `
 
     vec2 dirToRing = uRingPos - vLocalPos;
     float angle = atan(dirToRing.y, dirToRing.x);
+    float distToRing = length(dirToRing);
+    // bell weight: peak at ring, fade to dot toward center & far edge
+    float ringProx = 1.0 - smoothstep(0.0, 0.15, abs(distToRing - 0.28));
     vec2 uv = gl_PointCoord.xy - 0.5;
     uv.y *= -1.;
     uv = rotate(uv, angle + (noiseAngle * .5)); // capsule long axis points toward ring
@@ -265,7 +270,10 @@ const renderFragShader = `
     vec3 col = mix(mix(uColor1, uColor2, progress/h), mix(uColor2, uColor3, (progress - h)/(1.0 - h)), step(h, progress));
     vec3 color = col;
 
-    float rounded = sdRoundBox(uv, vec2(0.5, 0.13), vec4(.2));
+    // length shrinks to a dot away from ring; thickness stays small
+    float lenX = mix(0.12, 0.5, ringProx);
+    float lenY = 0.13;
+    float rounded = sdRoundBox(uv, vec2(lenX, lenY), vec4(.2));
     rounded = smoothstep(.1, 0., rounded);
 
     float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
