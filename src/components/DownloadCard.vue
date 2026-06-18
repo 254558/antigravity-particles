@@ -145,8 +145,8 @@ const simFragShader = `
     t += t2 * 3.;
     // far from ring → fade down, but keep a faint sparse glow toward center
     float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
-    // center region: small floor so the middle isn't fully empty (sparse dots)
-    float centerGlow = 0.12 * (1.0 - smoothstep(0.0, uRingRadius * 0.8, dist));
+    // center region: visible sparse dots, brighter when contracting (gathered)
+    float centerGlow = 0.35 * (1.0 - smoothstep(0.0, uRingRadius * 0.8, dist));
     t = t * farFade + centerGlow;
     t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
 
