@@ -235,7 +235,7 @@ const renderFragShader = `
   varying float vScale, vVelocity;
   uniform vec3 uColor1, uColor2, uColor3;
   uniform vec2 uRingPos, uRez;
-  uniform float uAlpha, uTime;
+  uniform float uAlpha, uTime, uBreath;
   uniform int uColorScheme;
   ${noiseGLSL}
   #define PI 3.14159265359
@@ -270,8 +270,8 @@ const renderFragShader = `
     vec3 col = mix(mix(uColor1, uColor2, progress/h), mix(uColor2, uColor3, (progress - h)/(1.0 - h)), step(h, progress));
     vec3 color = col;
 
-    // length shrinks to a dot away from ring; thickness stays small
-    float lenX = mix(0.12, 0.5, ringProx);
+    // length shrinks to a dot away from ring; expands on exhale, contracts on inhale
+    float lenX = mix(0.12, 0.5, ringProx) * (0.6 + uBreath * 0.8);
     float lenY = 0.13;
     float rounded = sdRoundBox(uv, vec2(lenX, lenY), vec4(.2));
     rounded = smoothstep(.1, 0., rounded);
@@ -376,6 +376,7 @@ function initGPU() {
       uParticleScale: { value: 1 },
       uPixelRatio: { value: renderer.getPixelRatio() },
       uColorScheme: { value: 1 },
+      uBreath: { value: 0 },
     },
     vertexShader: renderVertShader,
     fragmentShader: renderFragShader,
@@ -462,6 +463,8 @@ function animate() {
   smoothRingPos.lerp(targetPos, 0.03)
   const ringPos = smoothRingPos.clone()
   const ringRadius = 0.28 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
+  // breath pulse: 0=contract, 1=expand — drives capsule length
+  const breathPulse = 0.5 + 0.5 * Math.sin(time * 1.2)
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
@@ -488,6 +491,7 @@ function animate() {
   renderMaterial.uniforms.uRingPos.value = ringPos
   renderMaterial.uniforms.uTime.value = time
   renderMaterial.uniforms.uParticleScale.value = particleScale
+  renderMaterial.uniforms.uBreath.value = breathPulse
 
   renderer.clear()
   renderer.render(scene, camera)
