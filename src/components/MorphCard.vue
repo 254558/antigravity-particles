@@ -1,0 +1,372 @@
+<template>
+  <canvas :ref="el => { if (el) canvasEl = el }"></canvas>
+</template>
+
+<script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import * as THREE from 'three'
+import { gsap } from 'gsap'
+import { noiseGLSL } from '../composables/useNoiseGLSL.js'
+
+const props = defineProps({
+  imageUrl: { type: String, required: true },
+  color1: { type: String, default: '#318bf7' },
+  color2: { type: String, default: '#bada4c' },
+  color3: { type: String, default: '#e35058' },
+  scale: { type: Number, default: 1.3 },
+  yOffset: { type: Number, default: 0.1 },
+})
+
+const SIZE = 256
+const VIEW = 1.05
+
+let canvasEl = null
+let renderer, camera, scene, clock
+let simMat, simScene, simCam
+let posTex, refTex, nearTex
+let rt1, rt2, everRendered = false
+let mesh, rdrMat
+let hp = 0
+let animId = null
+let resizeHandler = null
+let mouseEnterHandler = null
+let mouseLeaveHandler = null
+
+function loadShapeImageData(url) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const cvs = document.createElement('canvas')
+      cvs.width = 500; cvs.height = 500
+      const ctx = cvs.getContext('2d')
+      ctx.drawImage(img, 0, 0, 500, 500)
+      resolve(ctx.getImageData(0, 0, 500, 500))
+    }
+    img.onerror = () => {
+      const cvs = document.createElement('canvas')
+      cvs.width = 500; cvs.height = 500
+      const ctx = cvs.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, 500, 500)
+      resolve(ctx.getImageData(0, 0, 500, 500))
+    }
+    img.src = url
+  })
+}
+
+// 1) 四邻域边缘检测: 提取形状的 1px 轮廓像素
+function sampleEdgePixels(imgData) {
+  const w = imgData.width, h = imgData.height
+  const isDark = new Uint8Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = imgData.data[(x + y * w) * 4] / 255
+      isDark[y * w + x] = (p * p * p < 0.15) ? 1 : 0
+    }
+  }
+  const edge = []
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!isDark[y * w + x]) continue
+      const l = x > 0 ? isDark[y * w + (x - 1)] : 1
+      const r = x < w - 1 ? isDark[y * w + (x + 1)] : 1
+      const t = y > 0 ? isDark[(y - 1) * w + x] : 1
+      const b = y < h - 1 ? isDark[(y + 1) * w + x] : 1
+      if (!(l && r && t && b)) edge.push([x, y])
+    }
+  }
+  return edge
+}
+
+// 2) 随机散点（全画幅均匀分布）
+function randomScatter(count) {
+  const pts = []
+  for (let i = 0; i < count; i++) {
+    pts.push([Math.random() * 500, Math.random() * 500])
+  }
+  return pts
+}
+
+function createRT() {
+  return new THREE.WebGLRenderTarget(SIZE, SIZE, {
+    minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+    format: THREE.RGBAFormat, type: THREE.FloatType, depthBuffer: false, stencilBuffer: false,
+  })
+}
+
+// SIM shader — 官方逻辑 1:1
+const simFrag = `
+  precision highp float;
+  uniform sampler2D uPosition, uPosRefs, uPosNearest;
+  uniform float uTime, uDeltaTime, uIsHovering;
+  vec2 hash(vec2 p){ p=vec2(dot(p,vec2(2127.1,81.17)),dot(p,vec2(1269.5,283.37))); return fract(sin(p)*43758.5453); }
+  void main(){
+    vec2 uv=gl_FragCoord.xy/256.0;
+    vec4 pf=texture2D(uPosition,uv); float s=pf.z, v=pf.w;
+    vec2 rp=texture2D(uPosRefs,uv).xy, np=texture2D(uPosNearest,uv).xy;
+    float sd=hash(uv).x, sd2=hash(uv).y, t=uTime*.5, le=3.+sin(sd2*100.)*1., lt=mod(sd*100.+t,le);
+    vec2 p=pf.xy;
+    // 判断是否为散点粒子（目标 === 基准 → 不动点）
+    float isEdge=step(.005,length(np-rp));
+    // 目标: hover 时从散乱基准插值到形状位置；散点粒子始终留在原位
+    vec2 tg=mix(rp,np,uIsHovering*uIsHovering*isEdge);
+    vec2 dr=normalize(tg-p)*.02;
+    float d=length(tg-p), ds=smoothstep(.3,0.,d);
+    if(d>.005) p+=dr*ds;
+    // 生命周期重置: 仅边缘粒子非 hover 时重置到散乱态
+    if(lt<.01 && uIsHovering<.5 && isEdge>.5){ p=rp; pf.xy=rp; s=0.; }
+    // scale: 生命周期脉动 + 已接近目标的边缘粒子 hover 时增大
+    float ts=smoothstep(.01,.5,lt)-smoothstep(.5,1.,lt/le);
+    ts+=smoothstep(.05,0.,d)*2.*uIsHovering*isEdge;
+    s+=(ts-s)*.1;
+    // velocity: 仅边缘粒子 hover 时靠近目标变亮
+    v=smoothstep(.3,.001,d)*uIsHovering*isEdge;
+    gl_FragColor=vec4(pf.xy+(p-pf.xy)*.2,s,v);
+  }
+`
+
+// RENDER vertex — 官方同款
+const rdrVert = `
+  precision highp float;
+  attribute vec4 seeds;
+  uniform sampler2D uPosition;
+  uniform float uTime, uParticleScale, uPixelRatio, uIsHovering, uPulseProgress;
+  uniform int uColorScheme;
+  varying vec4 vSeeds; varying float vVelocity, vScale; varying vec2 vLocalPos, vScreenPos;
+  ${noiseGLSL}
+  void main(){
+    vec4 pos=texture2D(uPosition,uv); vSeeds=seeds;
+    float nx=snoise(vec3(pos.xy*10.,uTime*.2+100.)), ny=snoise(vec3(pos.xy*10.,uTime*.2));
+    float nx2=snoise(vec3(pos.xy*.5,uTime*.15+45.)), ny2=snoise(vec3(pos.xy*.5,uTime*.15+87.));
+    float cd=length(pos.xy), pr=uPulseProgress;
+    float tt=smoothstep(pr-.25,pr,cd)-smoothstep(pr,pr+.25,cd); tt*=smoothstep(1.,.0,cd);
+    pos.xy*=1.+(tt*.02);
+    float d=smoothstep(0.,.9,pos.w); d=mix(0.,d,uIsHovering);
+    pos.y+=ny*.005*d; pos.x+=nx*.005*d; pos.y+=ny2*.02; pos.x+=nx2*.02;
+    vVelocity=pos.w; vScale=pos.z; vLocalPos=pos.xy;
+    vec4 vs=modelViewMatrix*vec4(vec3(pos.xy,0.),1.); gl_Position=projectionMatrix*vs; vScreenPos=gl_Position.xy;
+    float ms=.25+float(uColorScheme)*.75;
+    gl_PointSize=((vScale*7.)*(uPixelRatio*.5)*uParticleScale)+(ms*uPixelRatio);
+  }
+`
+
+// RENDER fragment — 官方同款小圆点
+const rdrFrag = `
+  precision highp float;
+  varying vec4 vSeeds; varying vec2 vScreenPos, vLocalPos; varying float vScale, vVelocity;
+  uniform vec3 uColor1,uColor2,uColor3; uniform vec2 uRez; uniform float uAlpha,uTime; uniform int uColorScheme;
+  ${noiseGLSL}
+  void main(){
+    vec2 uv=gl_PointCoord.xy-.5; uv.y*=-1.;
+    float h=.8, pr=vVelocity;
+    vec3 col=mix(mix(uColor1,uColor2,pr/h),mix(uColor2,uColor3,(pr-h)/(1.-h)),step(h,pr));
+    float disc=smoothstep(.5,.45,length(uv)), a=uAlpha*disc*smoothstep(.1,.2,vScale);
+    if(a<.01)discard; col=clamp(col,0.,1.);
+    col=mix(col,col*clamp(vVelocity,0.,1.),float(uColorScheme));
+    gl_FragColor=vec4(col,clamp(a,0.,1.));
+  }
+`
+
+onMounted(async () => {
+  if (!canvasEl) return
+  const card = canvasEl.parentElement
+  if (!card) return
+
+  const W = card.offsetWidth / 2
+  const H = card.offsetHeight
+  canvasEl.style.position = 'absolute'
+  canvasEl.style.top = '0'
+  canvasEl.style.width = '50%'
+  canvasEl.style.height = '100%'
+  canvasEl.style.display = 'block'
+  canvasEl.width = W
+  canvasEl.height = H
+
+  // 1. 加载形状图
+  const imgData = await loadShapeImageData(props.imageUrl)
+  const scl = props.scale
+  const yOff = props.yOffset
+
+  // 2. 边缘检测: 提取 1px 轮廓像素
+  const edgePts = sampleEdgePixels(imgData)
+  // 背景散点: 均匀随机分布，数量与边缘点数保持一定比例
+  const scatterCount = Math.min(edgePts.length * 2, 3000)
+  const scatterPts = randomScatter(scatterCount)
+
+  // 合并: 先放边缘粒子（轮廓），再放散点（背景）
+  const totalPts = edgePts.concat(scatterPts)
+  const count = Math.min(totalPts.length, SIZE * SIZE)
+
+  // 3. 生成位置数据
+  // 边缘粒子: base=随机的散落位置, target=边缘像素位置
+  // 散点粒子: base=随机位置, target=同一随机位置（hover 时不动）
+  const base = new Float32Array(count * 2)
+  const nearest = new Float32Array(count * 2)
+
+  for (let i = 0; i < count; i++) {
+    const edgeId = i < edgePts.length
+    if (edgeId) {
+      // 边缘粒子: 初始在随机位置，目标在边缘像素
+      const rx = Math.random() * 500, ry = Math.random() * 500
+      base[i * 2] = (rx - 250) / 250
+      base[i * 2 + 1] = (250 - ry) / 250
+      const ex = edgePts[i][0], ey = edgePts[i][1]
+      nearest[i * 2] = ((ex - 250) / 250) * scl
+      nearest[i * 2 + 1] = ((250 - ey) / 250) * scl + yOff
+    } else {
+      // 散点粒子: 始终在原位
+      const rx = totalPts[i][0], ry = totalPts[i][1]
+      const nx = (rx - 250) / 250
+      const ny = (250 - ry) / 250
+      base[i * 2] = nx
+      base[i * 2 + 1] = ny
+      nearest[i * 2] = nx
+      nearest[i * 2 + 1] = ny
+    }
+  }
+
+  // 4. Three.js
+  renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true })
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  renderer.setSize(W, H, false)
+  renderer.setClearColor(0x121212, 1)
+
+  const aspect = W / H
+  camera = new THREE.OrthographicCamera(-VIEW * aspect, VIEW * aspect, VIEW, -VIEW, 0, 10)
+  camera.position.z = 5
+  scene = new THREE.Scene()
+  scene.background = new THREE.Color(0x121212)
+  clock = new THREE.Clock()
+
+  // 5. GPGPU textures
+  const rawPos = new Float32Array(SIZE * SIZE * 4)
+  for (let i = 0; i < count; i++) { rawPos[i * 4] = base[i * 2]; rawPos[i * 4 + 1] = base[i * 2 + 1] }
+  const rawRef = new Float32Array(SIZE * SIZE * 4)
+  for (let i = 0; i < count; i++) { rawRef[i * 4] = base[i * 2]; rawRef[i * 4 + 1] = base[i * 2 + 1] }
+  const rawNear = new Float32Array(SIZE * SIZE * 4)
+  for (let i = 0; i < count; i++) { rawNear[i * 4] = nearest[i * 2]; rawNear[i * 4 + 1] = nearest[i * 2 + 1] }
+
+  posTex = new THREE.DataTexture(rawPos, SIZE, SIZE, THREE.RGBAFormat, THREE.FloatType)
+  posTex.needsUpdate = true; posTex.minFilter = THREE.NearestFilter; posTex.magFilter = THREE.NearestFilter
+  refTex = new THREE.DataTexture(rawRef, SIZE, SIZE, THREE.RGBAFormat, THREE.FloatType)
+  refTex.needsUpdate = true; refTex.minFilter = THREE.NearestFilter; refTex.magFilter = THREE.NearestFilter
+  nearTex = new THREE.DataTexture(rawNear, SIZE, SIZE, THREE.RGBAFormat, THREE.FloatType)
+  nearTex.needsUpdate = true; nearTex.minFilter = THREE.NearestFilter; nearTex.magFilter = THREE.NearestFilter
+  rt1 = createRT()
+  rt2 = createRT()
+
+  // 6. SIM
+  simMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uPosition: { value: posTex }, uPosRefs: { value: refTex }, uPosNearest: { value: nearTex },
+      uTime: { value: 0 }, uDeltaTime: { value: 0 }, uIsHovering: { value: 0 },
+    },
+    vertexShader: 'void main(){gl_Position=vec4(position,1.0);}',
+    fragmentShader: simFrag, depthTest: false, depthWrite: false,
+  })
+  simScene = new THREE.Scene()
+  simScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), simMat))
+  simCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
+
+  // 7. RENDER
+  const uvs = new Float32Array(count * 2)
+  const seeds = new Float32Array(count * 4)
+  for (let i = 0; i < count; i++) {
+    const x = i % SIZE, y = Math.floor(i / SIZE)
+    uvs[i * 2] = x / SIZE
+    uvs[i * 2 + 1] = y / SIZE
+    seeds[i * 4] = Math.random()
+    seeds[i * 4 + 1] = Math.random()
+    seeds[i * 4 + 2] = Math.random()
+    seeds[i * 4 + 3] = Math.random()
+  }
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3))
+  geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
+  geom.setAttribute('seeds', new THREE.BufferAttribute(seeds, 4))
+
+  const particleScale = W / 2000
+  rdrMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uPosition: { value: posTex }, uTime: { value: 0 },
+      uParticleScale: { value: particleScale },
+      uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
+      uRez: { value: new THREE.Vector2(W, H) },
+      uAlpha: { value: 1 }, uIsHovering: { value: 0 },
+      uPulseProgress: { value: 0 }, uColorScheme: { value: 0 },
+      uColor1: { value: new THREE.Color(props.color1) },
+      uColor2: { value: new THREE.Color(props.color2) },
+      uColor3: { value: new THREE.Color(props.color3) },
+    },
+    vertexShader: rdrVert, fragmentShader: rdrFrag,
+    transparent: true, depthTest: false, depthWrite: false,
+  })
+  mesh = new THREE.Points(geom, rdrMat)
+  mesh.frustumCulled = false
+  scene.add(mesh)
+
+  // 8. Hover
+  mouseEnterHandler = () => {
+    gsap.to({ v: hp }, {
+      v: 1, duration: 1.6, ease: 'power2.out',
+      onUpdate() { hp = this.targets()[0].v }
+    })
+  }
+  mouseLeaveHandler = () => {
+    gsap.to({ v: hp }, {
+      v: 0, duration: 1.2, ease: 'power3.out',
+      onUpdate() { hp = this.targets()[0].v }
+    })
+  }
+  canvasEl.addEventListener('mouseenter', mouseEnterHandler)
+  canvasEl.addEventListener('mouseleave', mouseLeaveHandler)
+
+  // 9. Animate
+  function animate() {
+    animId = requestAnimationFrame(animate)
+    const dt = clock.getDelta(), t = clock.getElapsedTime()
+    simMat.uniforms.uTime.value = t
+    simMat.uniforms.uDeltaTime.value = dt
+    simMat.uniforms.uIsHovering.value = hp
+    simMat.uniforms.uPosition.value = everRendered ? rt1.texture : posTex
+    renderer.setRenderTarget(rt2)
+    renderer.render(simScene, simCam)
+    renderer.setRenderTarget(null)
+    ;[rt1, rt2] = [rt2, rt1]
+    everRendered = true
+    rdrMat.uniforms.uPosition.value = rt1.texture
+    rdrMat.uniforms.uTime.value = t
+    rdrMat.uniforms.uIsHovering.value = hp
+    rdrMat.uniforms.uPulseProgress.value = (Math.sin(t * 0.6) + 1) * 0.5
+    renderer.render(scene, camera)
+  }
+  animate()
+
+  // 10. Resize
+  resizeHandler = () => {
+    const nw = card.offsetWidth / 2, nh = card.offsetHeight
+    renderer.setSize(nw, nh, false)
+    const na = nw / nh
+    camera.left = -VIEW * na
+    camera.right = VIEW * na
+    camera.top = VIEW
+    camera.bottom = -VIEW
+    camera.updateProjectionMatrix()
+    if (rdrMat) {
+      rdrMat.uniforms.uRez.value.set(nw, nh)
+      rdrMat.uniforms.uParticleScale.value = nw / 2000
+    }
+  }
+  window.addEventListener('resize', resizeHandler)
+})
+
+onBeforeUnmount(() => {
+  if (animId) cancelAnimationFrame(animId)
+  if (resizeHandler) window.removeEventListener('resize', resizeHandler)
+  if (canvasEl) {
+    if (mouseEnterHandler) canvasEl.removeEventListener('mouseenter', mouseEnterHandler)
+    if (mouseLeaveHandler) canvasEl.removeEventListener('mouseleave', mouseLeaveHandler)
+  }
+  if (renderer) renderer.dispose()
+})
+</script>

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Antigravity · Hover 汇集立方体卡片</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #0b0c0f; overflow: hidden; color: #e6e8eb; font: 14px/1.5 system-ui, sans-serif; }
+  body { display: grid; place-items: center; }
+
+  /* 卡片：和官网 morphing-particles-container 同款比例（648×728）*/
+  .card {
+    position: relative;
+    width: 648px; height: 728px;
+    border-radius: 28px;
+    overflow: hidden;
+    background: #0e0f13;
+    box-shadow: 0 30px 80px rgba(0,0,0,.5);
+    cursor: pointer;
+  }
+  canvas.particles { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .overlay {
+    position: absolute; left: 48px; right: 48px; bottom: 52px;
+    pointer-events: none; z-index: 2;
+  }
+  .eyebrow { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #8b9199; margin-bottom: 10px; }
+  .title { font-size: 40px; line-height: 1.1; font-weight: 500; letter-spacing: -.01em; margin-bottom: 14px; }
+  .desc { font-size: 15px; color: #b8bdc4; max-width: 420px; }
+  .hint { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,.35); font-size: 13px; }
+  .loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); color: rgba(255,255,255,.5); }
+</style>
+</head>
+<body>
+  <div class="hint">把鼠标移到卡片上 → 粒子汇集成一个立方体</div>
+  <div class="loading" id="loading">生成立方体贴图与粒子中…</div>
+
+  <div class="card" id="card">
+    <canvas class="particles" id="c"></canvas>
+    <div class="overlay">
+      <div class="eyebrow">For organizations</div>
+      <div class="title">Now Available!</div>
+      <div class="desc">Hover the card to see thousands of particles collapse into a cube shape.</div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/gsap@3.12.5/dist/gsap.min.js"></script>
+  <!-- 形状图片以 base64 内嵌（避免 file:// 下加载 PNG 的 CORS 污染） -->
+  <script src="shape_data.js"></script>
+  <script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.180.0/build/three.module.js" } }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ============================================================
+    // 配置
+    // ============================================================
+    const SIZE = 256;                  // GPGPU 纹理 256×256 → 最多 65536 粒子
+    // 大括号在图里只占 ±0.64（归一化）高度，放大后必须落在相机视野 ±VIEW(1.05) 内：
+    //   scale*0.64 + offset ≤ 1.05 → scale ≤ ~1.45。取 1.3 留边距，上半部分不再被裁掉。
+    const BRACE_SCALE = 1.3;           // 大括号目标放大倍数
+    const BRACE_Y_OFFSET = 0.1;        // 大括号整体上移，给底部文字留空间
+
+    // 官网 morphing 卡片类默认：theme="dark";density=100;particlesScale=1
+    // density=100 经 lerp(density,0,300,10,2) → minDistance ≈ 7.33（500×500 Poisson-disk）
+    const POISSON_MIN_DIST = 7.33;     // 官网 density=100 对应的 Poisson 最小间距
+    // 官网 particleScale = domElement.width / pixelRatio / 2000 * particlesScale
+    //   即 CSS 宽度 / 2000 * particlesScale；particlesScale=1
+    const PARTICLES_SCALE_CFG = 1;     // 官网 morphing 卡片 particlesScale 配置值
+
+    const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const card = document.getElementById('card');
+    let W = card.clientWidth, H = card.clientHeight;
+    renderer.setSize(W, H, false);
+    // 粒子点尺寸倍数（随卡片宽度变化，官网同款动态公式）
+    let particleScale = W / 2000 * PARTICLES_SCALE_CFG;
+
+    // 卡片用正交相机：粒子单位坐标 ±1 直接映射到卡片满幅（官网主屏用透视，但卡片近正方形、
+    // 粒子在 z=0，正交最干净，避免 scale(5,-5,5) 在不同宽高比下错位）
+    const VIEW = 1.05;              // 视野半径，略大于 1 让粒子有一点边距
+    const camera = new THREE.OrthographicCamera(-VIEW, VIEW, VIEW, -VIEW, 0, 10);
+    camera.position.z = 5;
+    const scene = new THREE.Scene();
+    const clock = new THREE.Clock();
+
+    // ============================================================
+    // 1. 加载形状图（base64 内嵌的 PNG，file:// 下无 CORS 问题）
+    //    编码与官网一致：亮背景 + 暗色笔画，
+    //    distanceFunction = pixel³ 自然把暗笔画当作粒子目标。
+    // ============================================================
+    function createBraceImageData(size = 500) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const cvs = document.createElement('canvas');
+          cvs.width = size; cvs.height = size;
+          const ctx = cvs.getContext('2d');
+          // 亮背景兜底（pixel³ ≈ 1 → 不采样）
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, size, size);
+          // 把形状图缩放到 size×size，contain 居中
+          ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, size, size);
+          resolve(ctx.getImageData(0, 0, size, size));
+        };
+        img.onerror = reject;
+        img.src = 'data:image/png;base64,' + window.SHAPE_PNG_B64;
+      });
+    }
+
+    // distanceFunction：暗像素（大括号笔画）返回小值 → 允许更高密度
+    function distanceFunction(point, imageData) {
+      const w = imageData.width, h = imageData.height;
+      const xi = Math.min(w - 1, Math.max(0, Math.round(point[0])));
+      const yi = Math.min(h - 1, Math.max(0, Math.round(point[1])));
+      const idx = (xi + yi * w) * 4;
+      const pixel = imageData.data[idx] / 255;   // R 通道：大括号是暗的(~0)，背景亮(~1)
+      return pixel * pixel * pixel;
+    }
+
+    // 简易 Poisson-disk：在大括号像素上撒点（官网用 poisson-disk-sampling 库 + distanceFunction）
+    function poissonOnBraces(imageData, maxTries) {
+      const pts = [];
+      const minDistSq = POISSON_MIN_DIST * POISSON_MIN_DIST;  // 官网 density=100 → minDist≈7.33
+      let guard = 0;
+      while (guard < maxTries) {
+        guard++;
+        const x = Math.random() * 500, y = Math.random() * 500;
+        if (distanceFunction([x, y], imageData) > 0.15) continue;   // 只在暗笔画上
+        let ok = true;
+        for (const p of pts) {
+          const dx = p[0] - x, dy = p[1] - y;
+          if (dx * dx + dy * dy < minDistSq) { ok = false; break; }
+        }
+        if (ok) pts.push([x, y]);
+      }
+      return pts;
+    }
+
+    // ============================================================
+    // 2. 生成粒子基准位置 + 每个粒子的“大括号目标位置”
+    // ============================================================
+    function buildParticles(braceImg) {
+      // pointsBase：500×500 内 Poisson-disk 散点（粒子平时散乱分布的范围）
+      // 官网 minDistance ≈ 7.33（density=100），用 try 上限驱动而非固定数量
+      const pointsBase = [];
+      {
+        const minDistSq = POISSON_MIN_DIST * POISSON_MIN_DIST;
+        const maxTries = 40000;
+        let guard = 0;
+        while (guard < maxTries) {
+          guard++;
+          const x = Math.random() * 500, y = Math.random() * 500;
+          let ok = true;
+          for (const p of pointsBase) {
+            const dx = p[0] - x, dy = p[1] - y;
+            if (dx * dx + dy * dy < minDistSq) { ok = false; break; }
+          }
+          if (ok) pointsBase.push([x, y]);
+        }
+      }
+
+      // 大括号目标点集（同款 minDistance，try 驱动）
+      const bracePoints = poissonOnBraces(braceImg, 20000);
+      window.__bracePoints = bracePoints.length;
+
+      // 粒子数 = 基准散点数（官网由 Poisson 自然决定，不固定）
+      const PARTICLE_COUNT = pointsBase.length;
+
+      // 每个粒子找最近的大括号点（官网：75% 概率跳过候选，pixel³<1 才算合法）
+      const nearest = [];
+      for (let i = 0; i < pointsBase.length; i++) {
+        let best = bracePoints[0], bestDist = Infinity;
+        for (let j = 0; j < bracePoints.length; j++) {
+          if (Math.random() < 0.75) continue;
+          const p = bracePoints[j];
+          const d = (p[0] - pointsBase[i][0]) ** 2 + (p[1] - pointsBase[i][1]) ** 2;
+          if (d < bestDist) { bestDist = d; best = p; }
+        }
+        // 归一化到 [-1,1]（500→±250 再 ÷250），再放大 + 上移（避开底部文字）
+        // Y 翻转：图像 y 向下、世界 y 向上，必须用 250-best[1] 让图像顶部映射到卡片顶部
+        nearest.push(((best[0] - 250) / 250) * BRACE_SCALE,
+                     ((250 - best[1]) / 250) * BRACE_SCALE + BRACE_Y_OFFSET);
+      }
+      // pointsBase 归一化到 [-1,1]（散乱态铺满卡片），Y 翻转与世界坐标对齐
+      const base = new Float32Array(PARTICLE_COUNT * 2);
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        base[i * 2] = (pointsBase[i][0] - 250) / 250;
+        base[i * 2 + 1] = (250 - pointsBase[i][1]) / 250;
+      }
+      // 诊断：大括号目标点的 x/y 范围（应落在相机视野 ±VIEW 内）
+      let nxMin=Infinity,nxMax=-Infinity,nyMin=Infinity,nyMax=-Infinity;
+      for (let i=0;i<nearest.length;i+=2){
+        nxMin=Math.min(nxMin,nearest[i]);nxMax=Math.max(nxMax,nearest[i]);
+        nyMin=Math.min(nyMin,nearest[i+1]);nyMax=Math.max(nyMax,nearest[i+1]);
+      }
+      window.__nearestRange = { x:[nxMin.toFixed(3),nxMax.toFixed(3)], y:[nyMin.toFixed(3),nyMax.toFixed(3)] };
+      return { base, nearest: new Float32Array(nearest), count: PARTICLE_COUNT };
+    }
+
+    // ============================================================
+    // 3. SIM shader —— 官网 morphing 卡片 shader (#4) 1:1
+    // ============================================================
+    const simFragShader = `
+      precision highp float;
+      uniform sampler2D uPosition;
+      uniform sampler2D uPosRefs;     // 粒子基准位置（散乱态）
+      uniform sampler2D uPosNearest;  // 大括号目标位置（hover 时汇集）
+      uniform float uTime, uDeltaTime, uIsHovering;
+
+      vec2 hash(vec2 p){
+        p = vec2(dot(p,vec2(2127.1,81.17)), dot(p,vec2(1269.5,283.37)));
+        return fract(sin(p)*43758.5453);
+      }
+
+      void main(){
+        vec2 simTexCoords = gl_FragCoord.xy / vec2(256.0, 256.0);
+        vec4 pFrame = texture2D(uPosition, simTexCoords);
+        float scale = pFrame.z;
+        float velocity = pFrame.w;
+        vec2 refPos = texture2D(uPosRefs, simTexCoords).xy;
+        vec2 nearestPos = texture2D(uPosNearest, simTexCoords).xy;
+        float seed = hash(simTexCoords).x;
+        float seed2 = hash(simTexCoords).y;
+
+        float time = uTime * .5;
+        float lifeEnd = 3. + sin(seed2 * 100.) * 1.;
+        float lifeTime = mod((seed * 100.) + time, lifeEnd);
+
+        vec2 disp = vec2(0., 0.);
+        vec2 pos = pFrame.xy;
+
+        float distRadius = 0.15;
+
+        // 目标位置：hover 时从散乱基准位置插值到大括号位置
+        vec2 targetPos = refPos;
+        targetPos = mix(targetPos, nearestPos, uIsHovering * uIsHovering);
+
+        vec2 direction = normalize(targetPos - pos);
+        direction *= .01;
+
+        float dist = length(targetPos - pos);
+        float distStrength = smoothstep(distRadius, 0., dist);
+
+        if(dist > 0.005){
+          pos += direction * distStrength;
+        }
+
+        if(lifeTime < .01){
+          pos = refPos;
+          pFrame.xy = refPos;
+          scale = 0.;
+        }
+
+        // 尺寸：生命周期 + hover 时靠近目标变大
+        float targetScale = smoothstep(.01, 0.5, lifeTime) - smoothstep(0.5, 1., lifeTime/lifeEnd);
+        targetScale += smoothstep(0.1, 0., smoothstep(0.001, .1, dist)) * 1.5 * uIsHovering;
+
+        float scaleDiff = targetScale - scale;
+        scaleDiff *= .1;
+        scale += scaleDiff;
+
+        vec2 finalPos = pos + (disp * smoothstep(0.001, distRadius, dist));
+        vec2 diff = finalPos - pFrame.xy;
+        diff *= .2;
+
+        velocity = smoothstep(distRadius, .001, dist) * uIsHovering;
+
+        vec4 frame = vec4(pFrame.xy + diff, scale, velocity);
+        gl_FragColor = frame;
+      }
+    `;
+
+    // ============================================================
+    // 4. RENDER shader —— 胶囊粒子（复用官网 capsule 渲染）
+    // ============================================================
+    // Simplex 3D noise (Ashima Arts) — 与 index.html 中验证通过的同款
+    const noiseGLSL = `
+      vec3 mod289(vec3 x){return x-floor(x*(1./289.))*289.;}
+      vec4 mod289(vec4 x){return x-floor(x*(1./289.))*289.;}
+      vec4 permute(vec4 x){return mod289(((x*34.)+1.)*x);}
+      vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+      float snoise(vec3 v){
+        const vec2 C=vec2(1./6.,1./3.); const vec4 D=vec4(0.,.5,1.,2.);
+        vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+        vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.-g;
+        vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+        vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+2.*C.xxx; vec3 x3=x0-D.yyy;
+        i=mod289(i);
+        vec4 p=permute(permute(permute(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
+        float n_=.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+        vec4 j=p-49.*floor(p*ns.z*ns.z);
+        vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.*x_);
+        vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.-abs(x)-abs(y);
+        vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+        vec4 s0=floor(b0)*2.+1.; vec4 s1=floor(b1)*2.+1.; vec4 sh=-step(h,vec4(0.));
+        vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+        vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+        vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+        p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+        vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.); m=m*m;
+        return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+      }
+    `;
+
+    // ============================================================
+    // 4. RENDER shader —— 官网 morphing 卡片真实 shader（vertex #5 + frag #6）
+    //    小圆点（disc），颜色由 velocity 驱动；vertex 带 noise 漂移 + minScale 保底
+    // ============================================================
+    const renderVertShader = `
+      precision highp float;
+      attribute vec4 seeds;
+      uniform sampler2D uPosition;
+      uniform float uTime, uParticleScale, uPixelRatio, uIsHovering, uPulseProgress;
+      uniform int uColorScheme;
+      varying vec4 vSeeds;
+      varying float vVelocity, vScale;
+      varying vec2 vLocalPos, vScreenPos;
+      ${noiseGLSL}
+      void main(){
+        vec4 pos = texture2D(uPosition, uv);
+        vSeeds = seeds;
+
+        float noiseX  = snoise(vec3(pos.xy * 10., uTime * .2 + 100.));
+        float noiseY  = snoise(vec3(pos.xy * 10., uTime * .2));
+        float noiseX2 = snoise(vec3(pos.xy * .5,  uTime * .15 + 45.));
+        float noiseY2 = snoise(vec3(pos.xy * .5,  uTime * .15 + 87.));
+
+        // 平滑圆盘脉冲（官网 ring 呼吸效果）
+        float cDist = length(pos.xy);
+        float progress = uPulseProgress;
+        float t = smoothstep(progress - .25, progress, cDist) - smoothstep(progress, progress + .25, cDist);
+        t *= smoothstep(1., .0, cDist);
+        pos.xy *= 1. + (t * .02);
+
+        // hover 时近圆心粒子被噪声推开一点
+        float dist = smoothstep(0., 0.9, pos.w);
+        dist = mix(0., dist, uIsHovering);
+        pos.y += noiseY  * 0.005 * dist;
+        pos.x += noiseX  * 0.005 * dist;
+        pos.y += noiseY2 * 0.02;
+        pos.x += noiseX2 * 0.02;
+
+        vVelocity = pos.w;
+        vScale = pos.z;
+        vLocalPos = pos.xy;
+        vec4 viewSpace = modelViewMatrix * vec4(vec3(pos.xy, 0.), 1.0);
+        gl_Position = projectionMatrix * viewSpace;
+        vScreenPos = gl_Position.xy;
+
+        // minScale 保底：vScale=0 时也保持一个最小点尺寸
+        float minScale = .25 + float(uColorScheme) * .75;
+        gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio);
+      }
+    `;
+
+    const renderFragShader = `
+      precision highp float;
+      varying vec4 vSeeds;
+      varying vec2 vScreenPos, vLocalPos;
+      varying float vScale, vVelocity;
+      uniform vec3 uColor1, uColor2, uColor3;
+      uniform vec2 uRingPos, uRez, uMousePos;
+      uniform float uAlpha, uTime;
+      uniform int uColorScheme;
+      ${noiseGLSL}
+      #define PI 3.14159265359
+
+      vec2 rotate(vec2 v, float a){ float s=sin(a),c=cos(a); return mat2(c,s,-s,c)*v; }
+
+      void main(){
+        vec2 uv = gl_PointCoord.xy;
+        uv -= vec2(0.5);
+        uv.y *= -1.;
+
+        // 颜色由 velocity 驱动（官网同款三段渐变）
+        float h = 0.8;
+        float progress = vVelocity;
+        vec3 col = mix(mix(uColor1, uColor2, progress/h),
+                       mix(uColor2, uColor3, (progress - h)/(1.0 - h)), step(h, progress));
+        vec3 color = col;
+
+        // 小圆点 alpha（官网 disc）
+        float disc = smoothstep(.5, .45, length(uv));
+        float a = uAlpha * disc * smoothstep(0.1, 0.2, vScale);
+        if (a < 0.01) discard;
+
+        color = clamp(color, 0., 1.);
+        color = mix(color, color * clamp(vVelocity, 0., 1.), float(uColorScheme));
+        gl_FragColor = vec4(color, clamp(a, 0., 1.));
+      }
+    `;
+
+    // ============================================================
+    // 5. GPGPU 基础设施
+    // ============================================================
+    function createDataTexture(data, channels = 4) {
+      const tex = new THREE.DataTexture(
+        data, SIZE, SIZE,
+        channels === 4 ? THREE.RGBAFormat : THREE.RGFormat,
+        THREE.FloatType
+      );
+      tex.needsUpdate = true;
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      return tex;
+    }
+    function createRT() {
+      return new THREE.WebGLRenderTarget(SIZE, SIZE, {
+        wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+        minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat, type: THREE.FloatType, depthBuffer: false, stencilBuffer: false,
+      });
+    }
+
+    let posTex, rt1, rt2, simScene, simCamera, simMaterial, renderMaterial, mesh, count;
+
+    function initGPU(base, nearest, particleCount) {
+      count = particleCount;
+      window.__particleCount = particleCount;
+      window.__particleScale = particleScale;
+      window.__canvasSize = { w: W, h: H };
+      // 初始位置纹理 = 基准位置（散乱态），scale=0, velocity=0
+      const posData = new Float32Array(SIZE * SIZE * 4);
+      for (let i = 0; i < count; i++) {
+        posData[i * 4] = base[i * 2];
+        posData[i * 4 + 1] = base[i * 2 + 1];
+        posData[i * 4 + 2] = 0;   // scale
+        posData[i * 4 + 3] = 0;   // velocity
+      }
+      posTex = createDataTexture(posData);
+
+      // uPosRefs 纹理 = 基准位置（散乱态）
+      const refData = new Float32Array(SIZE * SIZE * 4);
+      for (let i = 0; i < count; i++) {
+        refData[i * 4] = base[i * 2];
+        refData[i * 4 + 1] = base[i * 2 + 1];
+        refData[i * 4 + 2] = 0; refData[i * 4 + 3] = 0;
+      }
+      const refTex = createDataTexture(refData);
+
+      // uPosNearest 纹理 = 大括号目标位置
+      const nearData = new Float32Array(SIZE * SIZE * 4);
+      for (let i = 0; i < count; i++) {
+        nearData[i * 4] = nearest[i * 2];
+        nearData[i * 4 + 1] = nearest[i * 2 + 1];
+        nearData[i * 4 + 2] = 0; nearData[i * 4 + 3] = 0;
+      }
+      const nearTex = createDataTexture(nearData);
+
+      rt1 = createRT(); rt2 = createRT();
+
+      // SIM
+      simScene = new THREE.Scene();
+      simCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      simMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uPosition: { value: posTex },
+          uPosRefs: { value: refTex },
+          uPosNearest: { value: nearTex },
+          uTime: { value: 0 },
+          uDeltaTime: { value: 0 },
+          uIsHovering: { value: 0 },
+        },
+        vertexShader: `void main(){ gl_Position = vec4(position, 1.0); }`,
+        fragmentShader: simFragShader,
+        depthTest: false, depthWrite: false,
+      });
+      simScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), simMaterial));
+
+      // RENDER geometry
+      const geom = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const uvs = new Float32Array(count * 2);
+      const seeds = new Float32Array(count * 4);
+      for (let i = 0; i < count; i++) {
+        const x = i % SIZE, y = Math.floor(i / SIZE);
+        uvs[i * 2] = x / SIZE; uvs[i * 2 + 1] = y / SIZE;
+        seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random();
+        seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = Math.random();
+      }
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geom.setAttribute('seeds', new THREE.BufferAttribute(seeds, 4));
+
+      renderMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uPosition: { value: rt1.texture },
+          uTime: { value: 0 },
+          uParticleScale: { value: particleScale },
+          uPixelRatio: { value: Math.min(devicePixelRatio, 2) },
+          uRez: { value: new THREE.Vector2(W, H) },
+          uMousePos: { value: new THREE.Vector2(0, BRACE_Y_OFFSET) },
+          uRingPos: { value: new THREE.Vector2(0, BRACE_Y_OFFSET) },
+          uAlpha: { value: 1.0 },
+          uIsHovering: { value: 0 },
+          uPulseProgress: { value: 0 },
+          uColorScheme: { value: 0 },
+          uColor1: { value: new THREE.Color('#318bf7') },
+          uColor2: { value: new THREE.Color('#bada4c') },
+          uColor3: { value: new THREE.Color('#e35058') },
+        },
+        vertexShader: renderVertShader,
+        fragmentShader: renderFragShader,
+        transparent: true, depthTest: false, depthWrite: false,
+        blending: THREE.NormalBlending,
+      });
+      mesh = new THREE.Points(geom, renderMaterial);
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+    }
+
+    // ============================================================
+    // 6. hover 动画（GSAP 驱动 uIsHovering 0→1，和官网一致）
+    // ============================================================
+    let hoverProgress = 0;
+    let isHovering = false;
+    card.addEventListener('mouseenter', () => {
+      isHovering = true;
+      gsap.to({ v: hoverProgress }, {
+        v: 1, duration: 1.6, ease: 'power2.out',
+        onUpdate() { hoverProgress = this.targets()[0].v; }
+      });
+    });
+    card.addEventListener('mouseleave', () => {
+      isHovering = false;
+      gsap.to({ v: hoverProgress }, {
+        v: 0, duration: 1.2, ease: 'power3.out',
+        onUpdate() { hoverProgress = this.targets()[0].v; }
+      });
+    });
+
+    // ============================================================
+    // 7. 启动
+    // ============================================================
+    let everRendered = false;
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      const t = clock.getElapsedTime();
+
+      simMaterial.uniforms.uTime.value = t;
+      simMaterial.uniforms.uDeltaTime.value = dt;
+      simMaterial.uniforms.uIsHovering.value = hoverProgress;
+
+      // ping-pong SIM
+      const src = everRendered ? rt1 : (rt1.texture === posTex ? null : rt1);
+      simMaterial.uniforms.uPosition.value = everRendered ? rt1.texture : posTex;
+      renderer.setRenderTarget(rt2);
+      renderer.render(simScene, simCamera);
+      renderer.setRenderTarget(null);
+      [rt1, rt2] = [rt2, rt1];
+      everRendered = true;
+
+      // RENDER
+      renderMaterial.uniforms.uPosition.value = rt1.texture;
+      renderMaterial.uniforms.uTime.value = t;
+      renderMaterial.uniforms.uIsHovering.value = hoverProgress;
+      window.__hoverProgress = hoverProgress;
+      window.__isHovering = isHovering;
+      // 圆盘脉冲呼吸（官网 uPulseProgress 在 0~1 循环）
+      renderMaterial.uniforms.uPulseProgress.value = (Math.sin(t * 0.6) + 1) * 0.5;
+      renderer.render(scene, camera);
+    }
+
+    // resize（initGPU 完成前 renderMaterial 还不存在，需判空）
+    function resize() {
+      W = card.clientWidth; H = card.clientHeight;
+      renderer.setSize(W, H, false);
+      // 正交相机按宽高比缩放，保证粒子不被拉伸
+      const aspect = W / H;
+      camera.left = -VIEW * aspect; camera.right = VIEW * aspect;
+      camera.top = VIEW; camera.bottom = -VIEW;
+      camera.updateProjectionMatrix();
+      // 官网 particleScale 随宽度变化：W/2000*particlesScale
+      particleScale = W / 2000 * PARTICLES_SCALE_CFG;
+      if (renderMaterial) {
+        renderMaterial.uniforms.uRez.value.set(W, H);
+        renderMaterial.uniforms.uParticleScale.value = particleScale;
+      }
+    }
+    addEventListener('resize', resize);
+
+    // go
+    try {
+      const braceImg = await createBraceImageData(500);
+      const { base, nearest, count: pc } = buildParticles(braceImg);
+      initGPU(base, nearest, pc);
+      document.getElementById('loading').style.display = 'none';
+      animate();
+    } catch (e) {
+      document.getElementById('loading').textContent = '初始化失败：' + e.message;
+      console.error(e);
+    }
+  </script>
+</body>
+</html>

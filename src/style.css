@@ -1,0 +1,140 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; min-height: 100%;
+  background: #e8e8e8;
+  font-family: system-ui, sans-serif;
+}
+body {
+  display: flex; flex-direction: column;
+  align-items: center; padding: 60px 0;
+}
+
+/* ── Loading ── */
+.loading {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: rgba(0,0,0,0.4); font-size: 14px;
+  pointer-events: none; z-index: 1;
+}
+
+/* ── 黑色圆角卡片 ── */
+.download-card {
+  position: relative;
+  width: min(90vw, 2944px); height: min(60vw, 1443px);
+  background: #000;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.35);
+}
+.download-card canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+.card-overlay {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+.card-overlay h1 {
+  color: #fff; font-size: clamp(20px, 3.5vw, 36px);
+  font-weight: 500; letter-spacing: -0.3px;
+  margin-bottom: 8px;
+}
+.card-overlay p {
+  color: rgba(255,255,255,0.55);
+  font-size: clamp(13px, 1.6vw, 16px);
+  margin-bottom: 28px;
+}
+.card-overlay .btn {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border-radius: 8px;
+  background: #fff; color: #1a1a1a;
+  text-decoration: none; font-size: 15px; font-weight: 500;
+  transition: transform .15s;
+}
+.card-overlay .btn:hover { transform: scale(1.04); }
+
+/* ── 图标波浪 ── */
+.agent-first-section {
+  position: relative; margin: 20px auto 0;
+  width: 100%; max-width: 1440px;
+  overflow-x: clip;
+  padding: 40px 0;
+}
+.icon-list {
+  display: flex; flex-wrap: nowrap; gap: 8px;
+  justify-content: center;
+  list-style: none; margin: 20px 0 0; padding: 0;
+}
+.icon-list li { padding: 0; list-style: none; }
+.bouncer {
+  background: rgba(183,191,217,0.09);
+  border: 1px solid rgba(255,255,255,0.15);
+  will-change: transform;
+  backface-visibility: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Material Symbols Outlined';
+  font-size: 36px;
+  border-radius: 50%;
+  aspect-ratio: 1;
+  position: relative;
+  width: 98px;
+  font-weight: 300;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'ROND' 50, 'opsz' 48;
+  color: #c9ced6;
+  user-select: none;
+}
+.bouncer:nth-child(2) { z-index: 2; }
+
+/* ── Morphing 卡片 ── */
+.try-solutions-section {
+  width: 100%; max-width: 1440px;
+  margin: 20px auto 0;
+  padding: 30px 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.try-grid {
+  display: flex; gap: 20px;
+  justify-content: center;
+}
+.try-card-wrap { flex: 0 0 96%; max-width: 1296px; }
+.morphing-card {
+  position: relative;
+  width: 100%; aspect-ratio: 648/440;
+  border-radius: 28px;
+  overflow: hidden;
+  background: #0e0f13;
+  box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  cursor: pointer;
+}
+.morphing-card canvas.particles {
+  position: absolute; top: 0; bottom: 0;
+  width: 50%; height: 100%;
+  display: block;
+}
+.morphing-card canvas.left-canvas { left: 0; }
+.morphing-card canvas.right-canvas { left: 50%; }
+.mc-overlay {
+  position: absolute; bottom: 44px;
+  pointer-events: none; z-index: 2;
+  max-width: 45%;
+}
+.mc-overlay.left { left: 40px; }
+.mc-overlay.right { right: 40px; text-align: right; }
+.mc-overlay.right .mc-desc { margin-left: auto; }
+.mc-eyebrow {
+  font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+  color: #8b9199; margin-bottom: 10px;
+}
+.mc-title {
+  font-size: clamp(22px, 3vw, 40px);
+  line-height: 1.1; font-weight: 500; letter-spacing: -.01em;
+  margin-bottom: 12px; color: #fff;
+}
+.mc-desc {
+  font-size: 15px; color: #b8bdc4; max-width: 420px;
+  line-height: 1.5;
+}
