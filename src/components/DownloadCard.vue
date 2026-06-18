@@ -276,8 +276,8 @@ const renderFragShader = `
     // length shrinks to a dot away from ring; expands on exhale, contracts on inhale
     // mood: energetic → longer stretch & tighter shrink; relaxed → gentle
     float breathLen = 0.6 + uBreath * (0.7 + uMood * 0.4);
-    float halfLen = mix(0.12, 0.5, ringProx) * breathLen;
-    float capR = 0.13; // thickness (half of capsule width)
+    float halfLen = mix(0.12, 0.28, ringProx) * breathLen;
+    float capR = 0.10; // thickness (half of capsule width)
     // clamp: never let halfLen < capR → endpoints never cross, min shape is a clean dot
     halfLen = max(halfLen, capR);
     // clamp: keep within point sprite (uv ∈ [-0.5,0.5]) → no clipping → no parallelogram
