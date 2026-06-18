@@ -9,7 +9,7 @@
           <MorphCard
             imageUrl="/braces.png"
             color1="#318bf7"
-            color2="#318bf7"
+            color2="#b3d9ff"
             :scale="1.5"
             :yOffset="0.1"
           />
@@ -20,7 +20,7 @@
           <MorphCard
             imageUrl="/cube.png"
             color1="#318bf7"
-            color2="#318bf7"
+            color2="#b3d9ff"
             :scale="1.5"
             :yOffset="0"
           />
