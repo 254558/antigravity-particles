@@ -12,10 +12,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 const icons = [
-  'plus_code','deployed_code','spark','search_spark','data_object','refresh',
-  'code_blocks','dashboard_customize','commit','spark','folder','merge',
-  'developer_mode_tv','keyboard_tab','code','terminal','keyboard_return',
-  'file_copy','device_hub','pen_spark','keyboard_command_key','check_circle'
+'data_object','code_blocks','dashboard_customize','commit','folder','merge', 'developer_mode_tv','keyboard_tab','code','terminal','keyboard_return','file_copy','device_hub','data_object','code_blocks','dashboard_customize'
 ]
 
 const AMPLITUDE = 35
