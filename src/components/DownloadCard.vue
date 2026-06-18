@@ -235,16 +235,16 @@ const renderFragShader = `
   varying float vScale, vVelocity;
   uniform vec3 uColor1, uColor2, uColor3;
   uniform vec2 uRingPos, uRez;
-  uniform float uAlpha, uTime, uBreath;
+  uniform float uAlpha, uTime, uBreath, uMood;
   uniform int uColorScheme;
   ${noiseGLSL}
   #define PI 3.14159265359
 
-  float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x = (p.y > 0.0) ? r.x : r.y;
-    vec2 q = abs(p) - b + r.x;
-    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r.x;
+  // capsule: line segment with rounded ends — perfect half-circles, never deforms
+  float sdCapsule(vec2 p, vec2 a, vec2 b, float r) {
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.0001), 0.0, 1.0);
+    return length(pa - ba * h) - r;
   }
   vec2 rotate(vec2 v, float a) {
     float s = sin(a), c = cos(a);
@@ -256,14 +256,15 @@ const renderFragShader = `
     float noiseColor = snoise(vec3(vLocalPos * 2. + vec2(74.664, 91.556), uTime * .5));
     noiseColor = (noiseColor + 1.) * .5;
 
-    vec2 dirToRing = uRingPos - vLocalPos;
-    float angle = atan(dirToRing.y, dirToRing.x);
-    float distToRing = length(dirToRing);
+    // point outward (away from bell center) → reads as convex dome, like umbrella ribs
+    vec2 dirFromRing = vLocalPos - uRingPos;
+    float angle = atan(dirFromRing.y, dirFromRing.x);
+    float distToRing = length(dirFromRing);
     // bell weight: peak at ring, fade to dot toward center & far edge
     float ringProx = 1.0 - smoothstep(0.0, 0.15, abs(distToRing - 0.28));
     vec2 uv = gl_PointCoord.xy - 0.5;
     uv.y *= -1.;
-    uv = rotate(uv, angle + (noiseAngle * .5)); // capsule long axis points toward ring
+    uv = rotate(uv, angle + (noiseAngle * .5)); // capsule radiates outward (convex bell)
 
     float h = 0.8;
     float progress = smoothstep(0., .75, pow(noiseColor, 2.));
@@ -271,9 +272,14 @@ const renderFragShader = `
     vec3 color = col;
 
     // length shrinks to a dot away from ring; expands on exhale, contracts on inhale
-    float lenX = mix(0.12, 0.5, ringProx) * (0.6 + uBreath * 0.8);
-    float lenY = 0.13;
-    float rounded = sdRoundBox(uv, vec2(lenX, lenY), vec4(.2));
+    // mood: energetic → longer stretch & tighter shrink; relaxed → gentle
+    float breathLen = 0.6 + uBreath * (0.7 + uMood * 0.4);
+    float halfLen = mix(0.12, 0.5, ringProx) * breathLen;
+    float capR = 0.13; // thickness (half of capsule width)
+    // clamp: never let halfLen < capR → endpoints never cross, min shape is a clean dot
+    halfLen = max(halfLen, capR);
+    // capsule along x-axis before rotation: from (-halfLen+capR,0) to (halfLen-capR,0)
+    float rounded = sdCapsule(uv, vec2(-halfLen + capR, 0.0), vec2(halfLen - capR, 0.0), capR);
     rounded = smoothstep(.1, 0., rounded);
 
     float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
@@ -377,6 +383,7 @@ function initGPU() {
       uPixelRatio: { value: renderer.getPixelRatio() },
       uColorScheme: { value: 1 },
       uBreath: { value: 0 },
+      uMood: { value: 0.5 },
     },
     vertexShader: renderVertShader,
     fragmentShader: renderFragShader,
@@ -464,7 +471,12 @@ function animate() {
   const ringPos = smoothRingPos.clone()
   const ringRadius = 0.28 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
   // breath pulse: 0=contract, 1=expand — drives capsule length
-  const breathPulse = 0.5 + 0.5 * Math.sin(time * 1.2)
+  // mood: slow pseudo-random drift (0~1) — high = energetic, low = relaxed
+  const mood = 0.5 + 0.5 * (Math.sin(time * 0.18) * 0.6 + Math.sin(time * 0.07 + 1.3) * 0.4)
+  // mood modulates: frequency (faster when energetic), amplitude (stronger), offset
+  const breathFreq = 0.9 + mood * 0.8
+  const breathAmp = 0.35 + mood * 0.5
+  const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq)
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
@@ -492,6 +504,7 @@ function animate() {
   renderMaterial.uniforms.uTime.value = time
   renderMaterial.uniforms.uParticleScale.value = particleScale
   renderMaterial.uniforms.uBreath.value = breathPulse
+  renderMaterial.uniforms.uMood.value = mood
 
   renderer.clear()
   renderer.render(scene, camera)
