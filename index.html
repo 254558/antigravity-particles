@@ -309,10 +309,11 @@
       precision highp float;
       attribute vec4 seeds;
       uniform sampler2D uPosition;
+      uniform vec2 uRingPos;
       uniform float uTime, uParticleScale, uPixelRatio;
       uniform int uColorScheme;
       varying vec4 vSeeds;
-      varying float vVelocity, vScale;
+      varying float vVelocity, vScale, vRingDist;
       varying vec2 vLocalPos, vScreenPos;
       void main() {
         vec4 pos = texture2D(uPosition, uv);
@@ -320,10 +321,15 @@
         vVelocity = pos.w;
         vScale = pos.z;
         vLocalPos = pos.xy;
+        // 距离环心越近，粒子越小（中心挤压效果）
+        float distToRing = distance(pos.xy, uRingPos);
+        vRingDist = distToRing;
+        float sizeFactor = distToRing * 3.0 + 0.2;
+        sizeFactor = clamp(sizeFactor, 0.15, 1.0);
         vec4 viewSpace = modelViewMatrix * vec4(vec3(pos.xy, 0.), 1.0);
         gl_Position = projectionMatrix * viewSpace;
         vScreenPos = gl_Position.xy;
-        gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale);
+        gl_PointSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) * sizeFactor;
       }
     `;
 
@@ -331,7 +337,7 @@
       precision highp float;
       varying vec4 vSeeds;
       varying vec2 vScreenPos, vLocalPos;
-      varying float vScale, vVelocity;
+      varying float vScale, vVelocity, vRingDist;
       uniform vec3 uColor1, uColor2, uColor3;
       uniform vec2 uRingPos, uRez;
       uniform float uAlpha, uTime, uCapsuleLen, uCapsuleWid;
@@ -370,8 +376,11 @@
                        step(h, progress));
 
         // 胶囊形（sdRoundBox — 圆角矩形，全圆角=胶囊）
-        float lenHalf = 0.5 * uCapsuleLen;
-        float widHalf = uCapsuleWid;
+        // 离环心越近，胶囊越短越小
+        float distFactor = vRingDist * 2.0 + 0.15;
+        distFactor = clamp(distFactor, 0.2, 1.0);
+        float lenHalf = 0.5 * uCapsuleLen * distFactor;
+        float widHalf = uCapsuleWid * distFactor;
         float rounded = sdRoundBox(uv, vec2(lenHalf, widHalf), vec4(widHalf));
         rounded = smoothstep(0.1, 0.0, rounded);
 
@@ -569,9 +578,10 @@
       checkHover();
 
       // mousePos = intersectionPoint * 0.175（官网同款）
+      // 注意 mesh.scale.y = -5，所以 ringPos.y 也要取反
       const ringPos = new THREE.Vector2(
         intersectionPoint.x * 0.175,
-        intersectionPoint.y * 0.175
+        intersectionPoint.y * -0.175
       );
 
       // 计算 ringRadius（官网同款：随时间正弦变化）
