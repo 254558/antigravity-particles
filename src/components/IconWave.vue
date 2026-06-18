@@ -26,7 +26,7 @@ let phase = 0
 const step = WAVELENGTH / (7 * 60)
 
 function frame() {
-  phase = (phase + step * 0.8) % WAVELENGTH
+  phase = (phase + step * 0.4) % WAVELENGTH
   const listRect = listRef.value?.getBoundingClientRect()
   if (!listRect) { animId = requestAnimationFrame(frame); return }
 
