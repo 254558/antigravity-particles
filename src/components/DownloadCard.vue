@@ -116,68 +116,71 @@ function createRT() {
   })
 }
 
-const simFragShader = `
-  precision highp float;
-  uniform sampler2D uPosition, uPosRefs;
-  uniform vec2 uRingPos;
-  uniform float uTime, uDeltaTime;
-  uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement;
-  ${noiseGLSL}
-  void main() {
-    vec2 uv = gl_FragCoord.xy / 256.0;
-    vec4 pFrame = texture2D(uPosition, uv);
-    float scale = pFrame.z;
-    float velocity = pFrame.w;
-    vec2 refPos = texture2D(uPosRefs, uv).xy;
-    float time = uTime * 0.5;
-    vec2 curentPos = refPos;
-    vec2 pos = pFrame.xy;
-    pos *= 0.8;
+	const simFragShader = `
+	  precision highp float;
+	  uniform sampler2D uPosition, uPosRefs;
+	  uniform vec2 uRingPos;
+	  uniform float uTime, uDeltaTime;
+	  uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement;
+	  uniform float uBreath;
+	  ${noiseGLSL}
+	  void main() {
+	    vec2 uv = gl_FragCoord.xy / 256.0;
+	    vec4 pFrame = texture2D(uPosition, uv);
+	    float scale = pFrame.z;
+	    float velocity = pFrame.w;
+	    vec2 refPos = texture2D(uPosRefs, uv).xy;
+	    float time = uTime * 0.5;
+	    vec2 curentPos = refPos;
+	    vec2 pos = pFrame.xy;
+	    pos *= 0.8;
 
-    float dist = distance(curentPos.xy, uRingPos);
-    float noise0 = snoise(vec3(curentPos.xy * 0.2 + vec2(18.4924, 72.9744), time * 0.5));
-    float dist1 = distance(curentPos.xy + (noise0 * 0.005), uRingPos);
+	    float dist = distance(curentPos.xy, uRingPos);
+	    float noise0 = snoise(vec3(curentPos.xy * 0.2 + vec2(18.4924, 72.9744), time * 0.5));
+	    float dist1 = distance(curentPos.xy + (noise0 * 0.005), uRingPos);
 
-    float t = smoothstep(uRingRadius - (uRingWidth * 2.), uRingRadius, dist) - smoothstep(uRingRadius, uRingRadius + uRingWidth, dist1);
-    float t2 = smoothstep(uRingRadius - (uRingWidth2 * 2.), uRingRadius, dist) - smoothstep(uRingRadius, uRingRadius + uRingWidth2, dist1);
-    float t3 = smoothstep(uRingRadius + uRingWidth2, uRingRadius, dist);
+	    float t = smoothstep(uRingRadius - (uRingWidth * 2.), uRingRadius, dist) - smoothstep(uRingRadius, uRingRadius + uRingWidth, dist1);
+	    float t2 = smoothstep(uRingRadius - (uRingWidth2 * 2.), uRingRadius, dist) - smoothstep(uRingRadius, uRingRadius + uRingWidth2, dist1);
+	    float t3 = smoothstep(uRingRadius + uRingWidth2, uRingRadius, dist);
 
-    t = pow(t, 2.);
-    t2 = pow(t2, 3.);
-    t += t2 * 3.;
-    // far from ring → fade down, but keep a faint sparse glow toward center
-    float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
-    // center region: visible sparse dots, brighter when contracting (gathered)
-    float centerGlow = 0.35 * (1.0 - smoothstep(0.0, uRingRadius * 0.8, dist));
-    t = t * farFade + centerGlow;
-    t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
+	    t = pow(t, 2.);
+	    t2 = pow(t2, 3.);
+	    t += t2 * 3.;
+	    // far from ring → fade down, but keep a faint sparse glow toward center
+	    float farFade = 1. - smoothstep(uRingRadius - uRingWidth * 2., uRingRadius + uRingWidth * 6., dist);
+	    // center region: visible sparse dots, brighter when contracting (gathered)
+	    float centerGlow = 0.35 * (1.0 - smoothstep(0.0, uRingRadius * 0.8, dist));
+	    t = t * farFade + centerGlow;
+	    t += snoise(vec3(curentPos.xy * 30. + vec2(11.4924, 12.9744), time * 0.5)) * t3 * 0.5;
 
-    float noise1 = snoise(vec3(curentPos.xy * 4. + vec2(88.494, 32.4397), time * 0.35));
-    float noise2 = snoise(vec3(curentPos.xy * 4. + vec2(50.904, 120.947), time * 0.35));
-    float noise3 = snoise(vec3(curentPos.xy * 20. + vec2(18.4924, 72.9744), time * 0.5));
-    float noise4 = snoise(vec3(curentPos.xy * 20. + vec2(50.904, 120.947), time * 0.5));
+	    float noise1 = snoise(vec3(curentPos.xy * 4. + vec2(88.494, 32.4397), time * 0.35));
+	    float noise2 = snoise(vec3(curentPos.xy * 4. + vec2(50.904, 120.947), time * 0.35));
+	    float noise3 = snoise(vec3(curentPos.xy * 20. + vec2(18.4924, 72.9744), time * 0.5));
+	    float noise4 = snoise(vec3(curentPos.xy * 20. + vec2(50.904, 120.947), time * 0.5));
 
-    vec2 disp = vec2(noise1, noise2) * 0.03;
-    disp += vec2(noise3, noise4) * 0.005;
+	    vec2 disp = vec2(noise1, noise2) * 0.03;
+	    disp += vec2(noise3, noise4) * 0.005;
 
-    disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
-    disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
+	    disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
+	    disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
 
-    pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement;
+	    // breath modulates displacement amplitude: high breath = wider expansion/contraction
+	    float breathDisp = 0.6 + uBreath * 0.8;
+	    pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement * breathDisp;
 
-    // scale: single source (ring intensity) — no separate boost, keeps one bell
-    float scaleDiff = t - scale;
-    scaleDiff *= 0.2;
-    scale += scaleDiff;
+	    // scale: single source (ring intensity) — no separate boost, keeps one bell
+	    float scaleDiff = t - scale;
+	    scaleDiff *= 0.2;
+	    scale += scaleDiff;
 
-    vec2 finalPos = curentPos + disp + (pos * 0.25);
+	    vec2 finalPos = curentPos + disp + (pos * 0.25);
 
-    velocity *= 0.5;
-    velocity += scale * 0.25;
+	    velocity *= 0.5;
+	    velocity += scale * 0.25;
 
-    gl_FragColor = vec4(finalPos, scale, velocity);
-  }
-`
+	    gl_FragColor = vec4(finalPos, scale, velocity);
+	  }
+	`
 
 const renderVertShader = `
   precision highp float;
@@ -275,10 +278,9 @@ const renderFragShader = `
     vec3 col = mix(mix(uColor1, uColor2, progress/h), mix(uColor2, uColor3, (progress - h)/(1.0 - h)), step(h, progress));
     vec3 color = col;
 
-    // length shrinks to a dot away from ring; expands on exhale, contracts on inhale
-    // mood: energetic → longer stretch & tighter shrink; relaxed → gentle
-    float breathLen = 0.6 + uBreath * (0.7 + uMood * 0.4);
-	    float halfLen = mix(0.12, 0.22, ringProx) * breathLen;
+	    // length: stays stable — breath controls contraction/expansion displacement, not capsule speed
+	    // mood: energetic → slightly longer; relaxed → slightly shorter
+	    float halfLen = mix(0.14, 0.24, ringProx) * (0.8 + uMood * 0.4);
     float capR = 0.10; // thickness (half of capsule width)
     // clamp: never let halfLen < capR → endpoints never cross, min shape is a clean dot
     halfLen = max(halfLen, capR);
@@ -347,6 +349,7 @@ function initGPU() {
       uRingWidth: { value: CONFIG.ringWidth },
       uRingWidth2: { value: CONFIG.ringWidth2 },
       uRingDisplacement: { value: CONFIG.ringDisplacement },
+      uBreath: { value: 0 },
     },
     vertexShader: `void main(){ gl_Position = vec4(position, 1.0); }`,
     fragmentShader: simFragShader,
@@ -478,11 +481,11 @@ function animate() {
   smoothRingPos.lerp(targetPos, 0.03)
   const ringPos = smoothRingPos.clone()
   const ringRadius = 0.28 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
-  // breath pulse: 0=contract, 1=expand — drives capsule length
+  // breath pulse: 0=contract, 1=expand — drives particle displacement amplitude, NOT capsule length speed
   // mood: slow pseudo-random drift (0~1) — high = energetic, low = relaxed
   const mood = 0.5 + 0.5 * (Math.sin(time * 0.18) * 0.6 + Math.sin(time * 0.07 + 1.3) * 0.4)
   // mood modulates: frequency (faster when energetic), amplitude (stronger), offset
-  const breathFreq = 0.9 + mood * 0.8
+  const breathFreq = 0.9 + mood * 0.3
   const breathAmp = 0.35 + mood * 0.5
   const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq)
   const pw = pushProgress * hoverProgress
@@ -502,6 +505,7 @@ function animate() {
   simMaterial.uniforms.uRingWidth.value = ringWidthVal
   simMaterial.uniforms.uRingWidth2.value = ringWidth2Val
   simMaterial.uniforms.uRingDisplacement.value = ringDispVal
+  simMaterial.uniforms.uBreath.value = breathPulse
 
   renderer.setRenderTarget(rt2)
   renderer.render(simScene, simCamera)
