@@ -119,7 +119,7 @@ const simFragShader = `
   uniform sampler2D uPosition, uPosRefs;
   uniform vec2 uRingPos;
   uniform float uTime, uDeltaTime;
-  uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement;
+  uniform float uRingRadius, uRingWidth, uRingWidth2, uRingDisplacement, uBreath;
   ${noiseGLSL}
   void main() {
     vec2 uv = gl_FragCoord.xy / 256.0;
@@ -128,7 +128,8 @@ const simFragShader = `
     float velocity = pFrame.w;
     vec2 refPos = texture2D(uPosRefs, uv).xy;
     float time = uTime * 0.5;
-    vec2 curentPos = refPos;
+    // breath: scale reference positions outward (inhale) / inward (exhale)
+    vec2 curentPos = refPos * (0.9 + uBreath * 0.2);
     vec2 pos = pFrame.xy;
     pos *= 0.8;
 
@@ -324,6 +325,7 @@ function initGPU() {
       uRingWidth: { value: CONFIG.ringWidth },
       uRingWidth2: { value: CONFIG.ringWidth2 },
       uRingDisplacement: { value: CONFIG.ringDisplacement },
+      uBreath: { value: 0 },
     },
     vertexShader: `void main(){ gl_Position = vec4(position, 1.0); }`,
     fragmentShader: simFragShader,
@@ -448,6 +450,8 @@ function animate() {
   smoothRingPos.lerp(targetPos, 0.03)
   const ringPos = smoothRingPos.clone()
   const ringRadius = 0.175 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
+  // breath pulse: 0~1 sinusoid, ~5s per cycle for a slow calm inhale/exhale
+  const breathPulse = 0.5 + 0.5 * Math.sin(time * 1.2)
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
@@ -465,6 +469,7 @@ function animate() {
   simMaterial.uniforms.uRingWidth.value = ringWidthVal
   simMaterial.uniforms.uRingWidth2.value = ringWidth2Val
   simMaterial.uniforms.uRingDisplacement.value = ringDispVal
+  simMaterial.uniforms.uBreath.value = breathPulse
 
   renderer.setRenderTarget(rt2)
   renderer.render(simScene, simCamera)
