@@ -100,7 +100,7 @@ const simFrag = `
 				    vec2 tg=mix(rp,np,uIsHovering);
 				    vec2 dPos=tg-p;
 				    float d=length(dPos);
-					    if(d>.001) p+=normalize(dPos)*min(d*.12, .04);
+				    if(d>.001) p+=normalize(dPos)*min(d*.06, .02);
 				    // 循环流动: 粒子到达目标后重置到随机位置，周围新粒子源源不断被吸附
 					    float arrival=1.-smoothstep(.001,.08,d);
 					    float resetPhase=fract(sd*17.3+uTime*.3);
@@ -291,17 +291,17 @@ onMounted(async () => {
   scene.add(mesh)
 
   // 8. Hover
-	mouseEnterHandler = () => {
-	    gsap.to({ v: hp }, {
-	      v: 1, duration: 0.08, ease: 'power2.out',
-	      onUpdate() { hp = this.targets()[0].v }
-	    })
-	  }
-	  mouseLeaveHandler = () => {
-	    gsap.to({ v: hp }, {
-	      v: 0, duration: 0.08, ease: 'power2.out',
-	      onUpdate() { hp = this.targets()[0].v }
-	    })
+  mouseEnterHandler = () => {
+    gsap.to({ v: hp }, {
+      v: 1, duration: 0.2, ease: 'power2.out',
+      onUpdate() { hp = this.targets()[0].v }
+    })
+  }
+  mouseLeaveHandler = () => {
+    gsap.to({ v: hp }, {
+      v: 0, duration: 0.2, ease: 'power2.out',
+      onUpdate() { hp = this.targets()[0].v }
+    })
   }
   canvasEl.addEventListener('mouseenter', mouseEnterHandler)
   canvasEl.addEventListener('mouseleave', mouseLeaveHandler)
