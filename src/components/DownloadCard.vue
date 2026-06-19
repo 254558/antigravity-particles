@@ -248,7 +248,7 @@ const renderVertShader = `
 	    // center thickness: denser/heavier core for bell top
 	    float centerWeight = 1.0 - smoothstep(0.0, uRingRadius * 0.8, length(pos.xy));
 
-	    float ptSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio) + (edgeSize * 12.0 * uPixelRatio) + (centerWeight * 6.0 * uPixelRatio);
+		    float ptSize = ((vScale * 5.) * (uPixelRatio * 0.35) * uParticleScale) + (minScale * uPixelRatio * 0.8) + (edgeSize * 8.0 * uPixelRatio) + (centerWeight * 4.0 * uPixelRatio);
     // minimum pixels so round ends can render — tiny sprites turn into square pixels
     gl_PointSize = max(ptSize, 3.0 * uPixelRatio);
   }
