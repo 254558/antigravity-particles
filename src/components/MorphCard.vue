@@ -100,7 +100,7 @@ const simFrag = `
 				    vec2 tg=mix(rp,np,uIsHovering);
 				    vec2 dPos=tg-p;
 				    float d=length(dPos);
-				    if(d>.001) p+=normalize(dPos)*min(d*.06, .02);
+					    if(d>.001) p+=normalize(dPos)*min(d*.12, .04);
 				    // 循环流动: 粒子到达目标后重置到随机位置，周围新粒子源源不断被吸附
 					    float arrival=1.-smoothstep(.001,.08,d);
 					    float resetPhase=fract(sd*17.3+uTime*.3);
