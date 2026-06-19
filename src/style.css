@@ -141,6 +141,8 @@ body {
   font-size: clamp(28px, 3.5vw, 48px);
 }
 .typer-section .vue-typer {
+  display: block;
+  max-width: 860px;
   --char-typed-color: #fff;
   --char-selected-color: #fff;
   --caret-idle-color: #fff;
