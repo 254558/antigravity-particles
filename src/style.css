@@ -213,6 +213,7 @@ body {
   justify-content: center;
   text-align: center;
   padding: 48px;
+  padding-top: 0;
 }
 .morph-badge {
   display: inline-block;
@@ -237,7 +238,7 @@ body {
 .morph-title-bold {
   font-family: 'Google Sans Flex', system-ui, sans-serif;
   font-size: clamp(20px, 2.8vw, 38px);
-  font-weight: 300;
+  font-weight: 100;
   color: #fff;
   line-height: 1.2;
   letter-spacing: -0.5px;
@@ -245,7 +246,7 @@ body {
 .morph-title-light {
   font-family: 'Google Sans Flex', system-ui, sans-serif;
   font-size: clamp(15px, 2vw, 28px);
-  font-weight: 200;
+  font-weight: 100;
   color: rgba(255,255,255,0.55);
   line-height: 1.3;
   letter-spacing: -0.3px;

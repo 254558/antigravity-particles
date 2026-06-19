@@ -13,7 +13,7 @@
             imageUrl="/braces.png"
             color1="#318bf7"
             color2="#b3d9ff"
-            :scale="1.2"
+            :scale="1.35"
             :yOffset="0.1"
           />
           <div class="morph-overlay left">
@@ -32,7 +32,7 @@
             imageUrl="/cube.png"
             color1="#318bf7"
             color2="#b3d9ff"
-            :scale="1.2"
+            :scale="1.35"
             :yOffset="0"
           />
           <div class="morph-overlay right">
