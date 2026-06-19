@@ -53,7 +53,7 @@ body {
   align-items: center; justify-content: center;
   padding: 40px 10%;
   text-align: left;
-  margin-top: 400px;
+  margin-top: 500px;
   transform: translateY(-80px);
 }
 .card-overlay .logo {
@@ -134,7 +134,7 @@ body {
 /* ── 打字机 ── */
 .typer-section {
   width: 100vw;
-  padding: 48px 10% 64px 5%;
+  padding: 140px 10% 160px 5%;
   background: #000;
   text-align: left;
   font-family: 'Google Sans Flex', system-ui, sans-serif;

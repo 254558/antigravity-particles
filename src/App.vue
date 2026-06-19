@@ -3,7 +3,11 @@
   <DownloadCard />
   <IconWave />
   <div class="typer-section" ref="typerRef">
-    <Typer v-if="typerVisible" :repeat="0" :erase-delay="9999999" :erase-style="'clear'" text="Typewriter effect in Vue 3" />
+    <Typer v-if="typerVisible" :repeat="0" :erase-delay="9999999" :erase-style="'clear'" text="And now you've discovered" />
+    <br />
+    <Typer v-if="typerVisible" :repeat="0" :erase-delay="9999999" :erase-style="'clear'" text="the subtle art of anti-gravity particles," />
+    <br />
+    <Typer v-if="typerVisible" :repeat="0" :erase-delay="9999999" :erase-style="'clear'" text="a quiet collaboration with the laws of physics." />
   </div>
   <section class="try-solutions-section">
     <div class="try-grid">
