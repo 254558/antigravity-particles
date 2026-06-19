@@ -299,10 +299,13 @@ const renderFragShader = `
 
 	    // non-symmetric capsule: inner end fixed at origin, outer end extends/shortens
 	    float halfLen = mix(0.14, 0.32, ringProx) * (0.8 + uMood * 0.4);
-	    float capR = 0.10;
-	    halfLen = max(halfLen, capR);
-	    halfLen = min(halfLen, 0.48);
-	    float capEnd = max(halfLen * 2.0 - capR, capR);
+		    float capR = 0.14;
+		    halfLen = max(halfLen, capR);
+		    halfLen = min(halfLen, 0.32);
+		    float capEnd = max(halfLen * 2.0 - capR, capR);
+		    // clamp: keep within point sprite (uv ∈ [-0.5,0.5], center at 0)
+		    // asymmetric: inner end at origin, outer end at capEnd → capEnd ≤ 0.5
+		    capEnd = min(capEnd, 0.5 - capR);
 	    float rounded = sdCapsule(uv, vec2(0.0, 0.0), vec2(capEnd, 0.0), capR);
 	    float aa = max(capEnd * 0.04, 0.02);
 	    rounded = smoothstep(aa, 0., rounded);
