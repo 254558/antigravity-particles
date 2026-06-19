@@ -164,9 +164,17 @@ function createRT() {
 	    disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
 	    disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
 
-		    // breath modulates displacement amplitude: high breath = wider expansion/contraction
-		    // edge-weighted: rim particles curl inward more for visible pleated bell edge
-		    // layerFalloff ensures every ring layer contracts, not just the outermost
+		    // breath: all-ring contraction with circulation flow
+		    // radial + tangential flow field for bell top-view circulation
+		    vec2 dir = normalize(curentPos - uRingPos + 0.001);
+		    vec2 tangent = vec2(-dir.y, dir.x);
+		    // ① tangential swirl: particles orbit the rim
+		    float swirlWeight = smoothstep(uRingRadius * 0.4, uRingRadius * 1.2, dist);
+		    pos += tangent * swirlWeight * 0.012;
+		    // ② core suction: pull edge particles toward center
+		    float corePull = 1.0 - smoothstep(0.0, uRingRadius * 0.8, dist);
+		    pos -= dir * corePull * 0.008;
+		    // ③ radial contraction (existing): layer-weighted inward curl
 		    float edgeWeight = smoothstep(uRingRadius * 0.4, uRingRadius * 1.2, dist);
 		    float breathDisp = (0.6 + uBreath * 0.8) * (1.0 + edgeWeight * 0.8);
 		    float layerFalloff = smoothstep(0.0, uRingRadius * 1.2, dist);
@@ -193,6 +201,7 @@ const renderVertShader = `
   uniform float uTime, uParticleScale, uPixelRatio;
   uniform int uColorScheme;
   uniform float uIsHovering;
+  uniform float uRingRadius;
   varying vec4 vSeeds;
   varying float vVelocity, vScale;
   varying vec2 vLocalPos, vScreenPos;
@@ -230,10 +239,12 @@ const renderVertShader = `
     float minScale = .25;
     minScale += float(uColorScheme) * .75;
 
-    // edge particles grow larger — smooth ramp from center to rim
-    float edgeSize = pow(clamp(length(pos.xy) / 0.5, 0.0, 1.0), 1.5);
+	    // edge particles grow larger — smooth ramp from center to rim
+	    float edgeSize = pow(clamp(length(pos.xy) / 0.5, 0.0, 1.0), 1.5);
+	    // center thickness: denser/heavier core for bell top
+	    float centerWeight = 1.0 - smoothstep(0.0, uRingRadius * 0.8, length(pos.xy));
 
-    float ptSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio) + (edgeSize * 12.0 * uPixelRatio);
+	    float ptSize = ((vScale * 7.) * (uPixelRatio * 0.5) * uParticleScale) + (minScale * uPixelRatio) + (edgeSize * 12.0 * uPixelRatio) + (centerWeight * 6.0 * uPixelRatio);
     // minimum pixels so round ends can render — tiny sprites turn into square pixels
     gl_PointSize = max(ptSize, 3.0 * uPixelRatio);
   }
@@ -280,24 +291,20 @@ const renderFragShader = `
     float h = 0.8;
     float progress = smoothstep(0., .75, pow(noiseColor, 2.));
     vec3 col = mix(mix(uColor1, uColor2, progress/h), mix(uColor2, uColor3, (progress - h)/(1.0 - h)), step(h, progress));
-    vec3 color = col;
+	    vec3 color = col;
 
-	    // length: stays stable — breath controls contraction/expansion displacement, not capsule speed
-	    // mood: energetic → slightly longer; relaxed → slightly shorter
+	    // non-symmetric capsule: inner end fixed at origin, outer end extends/shortens
 	    float halfLen = mix(0.14, 0.32, ringProx) * (0.8 + uMood * 0.4);
-    float capR = 0.10; // thickness (half of capsule width)
-    // clamp: never let halfLen < capR → endpoints never cross, min shape is a clean dot
-    halfLen = max(halfLen, capR);
-    // clamp: keep within point sprite (uv ∈ [-0.5,0.5]) → no clipping → no parallelogram
-    halfLen = min(halfLen, 0.48);
-    // capsule along x-axis before rotation: from (-halfLen+capR,0) to (halfLen-capR,0)
-    float rounded = sdCapsule(uv, vec2(-halfLen + capR, 0.0), vec2(halfLen - capR, 0.0), capR);
-    // adaptive soft edge: scales with capsule size so small dots stay crisp & round
-    float aa = max(halfLen * 0.08, 0.02);
-    rounded = smoothstep(aa, 0., rounded);
+	    float capR = 0.10;
+	    halfLen = max(halfLen, capR);
+	    halfLen = min(halfLen, 0.48);
+	    float capEnd = max(halfLen * 2.0 - capR, capR);
+	    float rounded = sdCapsule(uv, vec2(0.0, 0.0), vec2(capEnd, 0.0), capR);
+	    float aa = max(capEnd * 0.04, 0.02);
+	    rounded = smoothstep(aa, 0., rounded);
 
-    float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
-    if (a < 0.01) discard;
+	    float a = uAlpha * rounded * smoothstep(0.1, 0.2, vScale);
+	    if (a < 0.01) discard;
 
     color = clamp(color, 0., 1.);
     color = mix(color, color * clamp(vVelocity, 0., 1.), float(uColorScheme));
@@ -397,9 +404,10 @@ function initGPU() {
       uParticleScale: { value: 1 },
       uPixelRatio: { value: renderer.getPixelRatio() },
       uColorScheme: { value: 1 },
-      uBreath: { value: 0 },
-      uMood: { value: 0.5 },
-    },
+	      uBreath: { value: 0 },
+	      uMood: { value: 0.5 },
+	      uRingRadius: { value: 0.28 },
+	    },
     vertexShader: renderVertShader,
     fragmentShader: renderFragShader,
   })
@@ -482,16 +490,16 @@ function animate() {
     intersectionPoint.x * 0.175,
     intersectionPoint.y * -0.175
   )
-  smoothRingPos.lerp(targetPos, 0.03)
-  const ringPos = smoothRingPos.clone()
-  const ringRadius = 0.28 + Math.sin(time * 1) * 0.03 + Math.cos(time * 3) * 0.02
-  // breath pulse: 0=contract, 1=expand — drives particle displacement amplitude, NOT capsule length speed
-  // mood: slow pseudo-random drift (0~1) — high = energetic, low = relaxed
-  const mood = 0.5 + 0.5 * (Math.sin(time * 0.18) * 0.6 + Math.sin(time * 0.07 + 1.3) * 0.4)
-  // mood modulates: frequency (faster when energetic), amplitude (stronger), offset
-  const breathFreq = 1.8 + mood * 0.6
-  const breathAmp = 0.35 + mood * 0.5
-  const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq * 0.5)
+	  smoothRingPos.lerp(targetPos, 0.03)
+	  const ringPos = smoothRingPos.clone()
+	  // breath pulse: 0=contract, 1=expand — drives particle displacement amplitude, NOT capsule length speed
+	  // mood: slow pseudo-random drift (0~1) — high = energetic, low = relaxed
+	  const mood = 0.5 + 0.5 * (Math.sin(time * 0.18) * 0.6 + Math.sin(time * 0.07 + 1.3) * 0.4)
+	  // mood modulates: frequency (faster when energetic), amplitude (stronger), offset
+	  const breathFreq = 1.8 + mood * 0.6
+	  const breathAmp = 0.35 + mood * 0.5
+	  const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq * 0.5)
+	  const ringRadius = 0.24 + breathPulse * 0.08
   const pw = pushProgress * hoverProgress
   const ringWidthVal = CONFIG.ringWidth + pw * 0.08
   const ringWidth2Val = CONFIG.ringWidth2 + pw * 0.04
@@ -522,6 +530,7 @@ function animate() {
   renderMaterial.uniforms.uParticleScale.value = particleScale
   renderMaterial.uniforms.uBreath.value = breathPulse
   renderMaterial.uniforms.uMood.value = mood
+  renderMaterial.uniforms.uRingRadius.value = ringRadius
 
   renderer.clear()
   renderer.render(scene, camera)
