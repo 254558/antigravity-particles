@@ -3,7 +3,7 @@
   <DownloadCard />
   <IconWave />
   <div class="typer-section" ref="typerRef">
-	    <Typer v-if="typerVisible" :repeat="0" :erase-delay="9999999" :erase-style="'clear'" text="Google Antigravity is our agentic development platform, allowing anyone to build in the agent-first era." />
+	    <Typer v-if="typerVisible" :repeat="0" :erase-delay="9999999" :erase-style="'clear'" :type-delay="35" text="Google Antigravity is our agentic development platform, allowing anyone to build in the agent-first era." />
   </div>
   <section class="try-solutions-section">
     <div class="try-grid">

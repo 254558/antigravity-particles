@@ -139,6 +139,7 @@ body {
   text-align: left;
   font-family: 'Google Sans Flex', system-ui, sans-serif;
   font-size: clamp(28px, 3.5vw, 48px);
+  min-height: calc(140px + 160px + 3.2em);
 }
 .typer-section .vue-typer {
   display: block;
