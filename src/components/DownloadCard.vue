@@ -487,7 +487,7 @@ function animate() {
   // mood: slow pseudo-random drift (0~1) — high = energetic, low = relaxed
   const mood = 0.5 + 0.5 * (Math.sin(time * 0.18) * 0.6 + Math.sin(time * 0.07 + 1.3) * 0.4)
   // mood modulates: frequency (faster when energetic), amplitude (stronger), offset
-  const breathFreq = 0.9 + mood * 0.3
+  const breathFreq = 1.8 + mood * 0.6
   const breathAmp = 0.35 + mood * 0.5
   const breathPulse = 0.5 + breathAmp * Math.sin(time * breathFreq * 0.5)
   const pw = pushProgress * hoverProgress
