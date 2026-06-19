@@ -53,6 +53,7 @@ body {
   align-items: center; justify-content: center;
   padding: 40px 10%;
   text-align: left;
+  margin-top: 400px;
   transform: translateY(-80px);
 }
 .card-overlay .logo {
