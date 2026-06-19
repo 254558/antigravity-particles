@@ -1,7 +1,7 @@
 <template>
   <div class="download-card" ref="cardRef">
     <div class="card-overlay">
-      <h1>反重力</h1>
+      <h1>Antigravity</h1>
       <div class="download-btns">
         <a class="download-btn download-btn-primary" href="#">Download for Apple Silicon</a>
         <a class="download-btn download-btn-secondary" href="#">Download for Intel</a>
