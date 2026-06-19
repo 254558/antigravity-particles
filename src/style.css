@@ -62,7 +62,7 @@ body {
 .card-overlay h1 {
   color: #fff; font-size: clamp(42px, 7vw, 72px);
   font-weight: 500; letter-spacing: -0.3px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   font-family: 'Google Sans Flex', system-ui, sans-serif;
   width: 100%;
 }
