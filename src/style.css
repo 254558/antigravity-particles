@@ -51,7 +51,7 @@ body {
   pointer-events: none;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: 40px 10%;
+  padding: 40px 15% 40px 8%;
   text-align: left;
   margin-top: 500px;
   transform: translateY(-80px);
@@ -62,7 +62,7 @@ body {
 .card-overlay h1 {
   color: #fff; font-size: clamp(42px, 7vw, 72px);
   font-weight: 500; letter-spacing: -0.3px;
-  margin-bottom: 4px;
+  margin-bottom: 20px;
   font-family: 'Google Sans Flex', system-ui, sans-serif;
   width: 100%;
 }
