@@ -164,11 +164,13 @@ function createRT() {
 	    disp.x += sin((refPos.x * 20.) + (time * 4.)) * 0.02 * clamp(dist, 0., 1.);
 	    disp.y += cos((refPos.y * 20.) + (time * 3.)) * 0.02 * clamp(dist, 0., 1.);
 
-	    // breath modulates displacement amplitude: high breath = wider expansion/contraction
-	    // edge-weighted: rim particles curl inward more for visible pleated bell edge
-	    float edgeWeight = smoothstep(uRingRadius * 0.4, uRingRadius * 1.2, dist);
-	    float breathDisp = (0.6 + uBreath * 0.8) * (1.0 + edgeWeight * 0.8);
-	    pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement * breathDisp;
+		    // breath modulates displacement amplitude: high breath = wider expansion/contraction
+		    // edge-weighted: rim particles curl inward more for visible pleated bell edge
+		    // layerFalloff ensures every ring layer contracts, not just the outermost
+		    float edgeWeight = smoothstep(uRingRadius * 0.4, uRingRadius * 1.2, dist);
+		    float breathDisp = (0.6 + uBreath * 0.8) * (1.0 + edgeWeight * 0.8);
+		    float layerFalloff = smoothstep(0.0, uRingRadius * 1.2, dist);
+		    pos -= (uRingPos - (curentPos + disp)) * pow(t2, 0.75) * uRingDisplacement * breathDisp * layerFalloff;
 
 	    // scale: single source (ring intensity) — no separate boost, keeps one bell
 	    float scaleDiff = t - scale;
@@ -282,7 +284,7 @@ const renderFragShader = `
 
 	    // length: stays stable — breath controls contraction/expansion displacement, not capsule speed
 	    // mood: energetic → slightly longer; relaxed → slightly shorter
-	    float halfLen = mix(0.14, 0.24, ringProx) * (0.8 + uMood * 0.4);
+	    float halfLen = mix(0.14, 0.32, ringProx) * (0.8 + uMood * 0.4);
     float capR = 0.10; // thickness (half of capsule width)
     // clamp: never let halfLen < capR → endpoints never cross, min shape is a clean dot
     halfLen = max(halfLen, capR);
