@@ -23,7 +23,7 @@ const CONFIG = {
   ringWidth: 0.15,
   ringWidth2: 0.05,
   ringDisplacement: 0.23,
-  particlesScale: 0.65,
+  particlesScale: 1,
   colors: ['#a0c4ff', '#a0c4ff', '#a0c4ff'],
 }
 const PI = Math.PI
